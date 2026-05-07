@@ -1,0 +1,53 @@
+name: Deploy to netcup
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, json, mbstring, openssl, curl, tokenizer, fileinfo
+          tools: composer:v2
+
+      - name: Install production dependencies
+        run: composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction
+
+      - name: Compute release timestamp
+        id: ts
+        run: echo "RELEASE=$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      - name: Stage release
+        run: |
+          mkdir -p _release
+          rsync -a --delete \
+            --exclude=.git --exclude=.github --exclude=tests \
+            --exclude=node_modules --exclude=_release \
+            ./ _release/
+          touch _release/.deploy-complete
+
+      - name: Upload to netcup via SFTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.NETCUP_FTP_HOST }}
+          username: ${{ secrets.NETCUP_FTP_USER }}
+          password: ${{ secrets.NETCUP_FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./_release/
+          server-dir: ./sites/api.tracht-digital.de/customer/releases/${{ steps.ts.outputs.RELEASE }}/
+          dangerous-clean-slate: false
+
+      - name: Trigger installer
+        run: |
+          curl --fail --silent --show-error \
+            "${{ vars.INSTALLER_URL }}?action=install-php&target=customer&release=${{ steps.ts.outputs.RELEASE }}&migrate=1&token=${{ secrets.INSTALL_TOKEN }}"

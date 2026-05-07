@@ -1,0 +1,11 @@
+/vendor/
+/.env
+/.env.local
+/var/log/*
+!/var/log/.gitkeep
+/.phpunit.cache/
+/composer.phar
+/.idea/
+/.vscode/
+.DS_Store
+*.log
