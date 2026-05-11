@@ -11,7 +11,10 @@ use Slim\App;
 use Slim\Factory\AppFactory;
 use Tds\CustomerApi\Action\Document\DownloadAction;
 use Tds\CustomerApi\Action\Document\ListAction as DocumentListAction;
+use Tds\CustomerApi\Action\Document\SignAction;
+use Tds\CustomerApi\Action\Document\SignedDownloadAction;
 use Tds\CustomerApi\Action\Document\UploadAction;
+use Tds\CustomerApi\Action\HealthAction;
 use Tds\CustomerApi\Action\Invoice\ListAction as InvoiceListAction;
 use Tds\CustomerApi\Action\Invoice\PayAction;
 use Tds\CustomerApi\Action\Message\CreateAction as MessageCreateAction;
@@ -20,8 +23,10 @@ use Tds\CustomerApi\Action\Project\GetAction as ProjectGetAction;
 use Tds\CustomerApi\Action\Project\ListAction as ProjectListAction;
 use Tds\CustomerApi\Action\Stripe\WebhookAction;
 use Tds\CustomerApi\Infrastructure\Database;
+use Tds\CustomerApi\Middleware\AuditLogMiddleware;
 use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
+use Tds\CustomerApi\Service\DocumentSigner;
 use Tds\CustomerApi\Service\JwksClient;
 
 final class Bootstrap
@@ -49,6 +54,10 @@ final class Bootstrap
             cacheTtl: (int) self::env('JWKS_CACHE_TTL', '600'),
         ));
 
+        $container->set(DocumentSigner::class, fn () => new DocumentSigner(
+            self::env('DOCUMENT_SIGN_SECRET'),
+        ));
+
         AppFactory::setContainer($container);
         $app = AppFactory::create();
         $app->addBodyParsingMiddleware();
@@ -57,13 +66,20 @@ final class Bootstrap
         $app->addErrorMiddleware(self::env('APP_ENV') !== 'production', true, true);
 
         $auth = new JwksAuthMiddleware($container->get(JwksClient::class));
+        $audit = new AuditLogMiddleware($container->get(PDO::class));
 
-        // Stripe webhook BYPASSES JwksAuthMiddleware because Stripe
-        // can't authenticate with our JWT. Signature verification
-        // happens inside the action handler.
+        // Public endpoints — bypass auth
+        $app->get('/healthz', HealthAction::class);
+        // Stripe webhook authenticates via Stripe-Signature header
+        // (verified inside the action), so no JWT required.
         $app->post('/stripe/webhook', WebhookAction::class);
+        // Signed-URL download authenticates via the URL's HMAC. The
+        // signature IS the auth — verified inside the action.
+        $app->get('/documents/sign', SignedDownloadAction::class);
 
-        // All other endpoints require a valid JWT
+        // All other endpoints require a valid JWT. AuditLog runs
+        // inside the auth group so every authenticated request is
+        // recorded with the JWT claims attached.
         $app->group('', function ($g) {
             $g->get('/projects', ProjectListAction::class);
             $g->get('/projects/{id:[0-9]+}', ProjectGetAction::class);
@@ -72,9 +88,10 @@ final class Bootstrap
             $g->get('/documents', DocumentListAction::class);
             $g->post('/documents', UploadAction::class);
             $g->get('/documents/{id:[0-9]+}/download', DownloadAction::class);
+            $g->post('/documents/{id:[0-9]+}/sign', SignAction::class);
             $g->get('/messages', MessageListAction::class);
             $g->post('/messages', MessageCreateAction::class);
-        })->add($auth);
+        })->add($audit)->add($auth);
 
         return $app;
     }
