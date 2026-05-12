@@ -140,8 +140,11 @@ their cached signed URL serve files after the row goes away.
 
 | Issue | Status |
 |---|---|
-| `#6` Customer onboarding | Pending — `customer_credential` lives in `tds-auth-api`. Needs a cross-API design (call into auth-api after inserting the `customer` row, or move the credential table here). |
 | `#7` Stripe Customer Portal | Deferred per the issue — only file the work if the portal config justifies it before launch. |
+
+Customer onboarding (admin creates customer + temp password) was
+tracked as `#6` and closed on GitHub, but the corresponding admin
+endpoints aren't in `src/Action/` yet. Implement or reopen.
 
 ---
 

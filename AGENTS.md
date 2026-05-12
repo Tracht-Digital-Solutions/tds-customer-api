@@ -32,15 +32,11 @@ doesn't lose the financial/document/comm history.
 
 ## Open issues
 
-- #3  Stripe webhook signature verification + idempotency hardening
-- #4  Document upload mime allowlist + size cap (basic 25MB cap is in;
-       refine the allowlist after first usage)
-- #5  Document download signed URLs (short TTL)
-- #6  Customer onboarding flow (admin creates customer + temp password)
-- #7  Stripe Customer Portal integration
-- #8  Audit log for customer-data access
-- #9  First production deploy + e2e flow
-- #10 /healthz liveness endpoint
+- #7  Stripe Customer Portal integration (deferred)
+
+`#6` (customer onboarding) is closed on the tracker but the admin
+endpoints aren't in `src/Action/` — reopen or implement before
+production cutover.
 
 ## Don't
 
