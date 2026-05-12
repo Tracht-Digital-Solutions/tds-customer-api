@@ -34,9 +34,14 @@ doesn't lose the financial/document/comm history.
 
 - #7  Stripe Customer Portal integration (deferred)
 
-`#6` (customer onboarding) is closed on the tracker but the admin
-endpoints aren't in `src/Action/` — reopen or implement before
-production cutover.
+## Admin endpoints
+
+`POST /admin/customers` is gated by `AdminAuthMiddleware` (shared
+ADMIN_TOKEN, Bearer). It wraps the customer-row insert in a
+transaction and calls into tds-auth-api `POST /admin/customer-
+credentials` to store the argon2id-hashed temp password. If that
+downstream call fails, the customer row is rolled back so no
+account exists that can't log in.
 
 ## Don't
 

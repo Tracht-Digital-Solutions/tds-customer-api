@@ -18,6 +18,7 @@ All require a customer JWT (`admin=false, customer_id=N`) issued by
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/healthz` | Liveness probe — DB/Stripe/blob storage state |
+| `POST` | `/admin/customers` | **Admin onboarding** (Bearer `ADMIN_TOKEN`): insert customer + ask tds-auth-api to store credential; returns `{customer, tempPassword}` once |
 | `GET` | `/projects` | List customer's projects |
 | `GET` | `/projects/{id}` | Project detail with milestones |
 | `GET` | `/invoices` | List invoices |
@@ -83,7 +84,8 @@ netcup carries the secrets and is symlinked into each release.
 | Env var | Purpose |
 |---|---|
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASS` | MariaDB |
-| `AUTH_API_URL` | JWKS endpoint base (e.g. `https://api.tracht-digital.de/auth`) |
+| `AUTH_API_URL` | tds-auth-api base — used for both JWKS verification and the onboarding S2S call (e.g. `https://api.tracht-digital.de/auth`) |
+| `ADMIN_TOKEN` | Shared admin secret — gates `POST /admin/customers` here and is the Bearer we send to tds-auth-api `POST /admin/customer-credentials`. Same value as tds-auth-api's `ADMIN_TOKEN`. |
 | `JWKS_CACHE_TTL` | Default 600 s |
 | `STRIPE_SECRET_KEY` | Stripe Checkout / portal calls |
 | `STRIPE_WEBHOOK_SECRET` | Verifies `/stripe/webhook` signatures |
@@ -141,10 +143,6 @@ their cached signed URL serve files after the row goes away.
 | Issue | Status |
 |---|---|
 | `#7` Stripe Customer Portal | Deferred per the issue — only file the work if the portal config justifies it before launch. |
-
-Customer onboarding (admin creates customer + temp password) was
-tracked as `#6` and closed on GitHub, but the corresponding admin
-endpoints aren't in `src/Action/` yet. Implement or reopen.
 
 ---
 

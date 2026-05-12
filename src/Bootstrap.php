@@ -9,6 +9,7 @@ use GuzzleHttp\Client as GuzzleClient;
 use PDO;
 use Slim\App;
 use Slim\Factory\AppFactory;
+use Tds\CustomerApi\Action\Admin\CreateCustomerAction;
 use Tds\CustomerApi\Action\Document\DownloadAction;
 use Tds\CustomerApi\Action\Document\ListAction as DocumentListAction;
 use Tds\CustomerApi\Action\Document\SignAction;
@@ -23,6 +24,7 @@ use Tds\CustomerApi\Action\Project\GetAction as ProjectGetAction;
 use Tds\CustomerApi\Action\Project\ListAction as ProjectListAction;
 use Tds\CustomerApi\Action\Stripe\WebhookAction;
 use Tds\CustomerApi\Infrastructure\Database;
+use Tds\CustomerApi\Middleware\AdminAuthMiddleware;
 use Tds\CustomerApi\Middleware\AuditLogMiddleware;
 use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
@@ -58,6 +60,13 @@ final class Bootstrap
             self::env('DOCUMENT_SIGN_SECRET'),
         ));
 
+        $container->set(CreateCustomerAction::class, fn (Container $c) => new CreateCustomerAction(
+            pdo: $c->get(PDO::class),
+            http: new GuzzleClient(['timeout' => 10, 'connect_timeout' => 5]),
+            authApiUrl: self::env('AUTH_API_URL'),
+            adminToken: self::env('ADMIN_TOKEN'),
+        ));
+
         AppFactory::setContainer($container);
         $app = AppFactory::create();
         $app->addBodyParsingMiddleware();
@@ -67,6 +76,7 @@ final class Bootstrap
 
         $auth = new JwksAuthMiddleware($container->get(JwksClient::class));
         $audit = new AuditLogMiddleware($container->get(PDO::class));
+        $admin = new AdminAuthMiddleware(self::env('ADMIN_TOKEN', ''));
 
         // Public endpoints — bypass auth
         $app->get('/healthz', HealthAction::class);
@@ -76,6 +86,10 @@ final class Bootstrap
         // Signed-URL download authenticates via the URL's HMAC. The
         // signature IS the auth — verified inside the action.
         $app->get('/documents/sign', SignedDownloadAction::class);
+
+        // Admin endpoints — Bearer ADMIN_TOKEN. Not behind JwksAuth
+        // because admin tooling carries the shared token, not a JWT.
+        $app->post('/admin/customers', CreateCustomerAction::class)->add($admin);
 
         // All other endpoints require a valid JWT. AuditLog runs
         // inside the auth group so every authenticated request is
