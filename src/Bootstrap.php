@@ -10,6 +10,7 @@ use PDO;
 use Slim\App;
 use Slim\Factory\AppFactory;
 use Tds\CustomerApi\Action\Admin\CreateCustomerAction;
+use Tds\CustomerApi\Action\Admin\ListProjectsAction as AdminListProjectsAction;
 use Tds\CustomerApi\Action\Document\DownloadAction;
 use Tds\CustomerApi\Action\Document\ListAction as DocumentListAction;
 use Tds\CustomerApi\Action\Document\SignAction;
@@ -23,6 +24,14 @@ use Tds\CustomerApi\Action\Message\ListAction as MessageListAction;
 use Tds\CustomerApi\Action\Project\GetAction as ProjectGetAction;
 use Tds\CustomerApi\Action\Project\ListAction as ProjectListAction;
 use Tds\CustomerApi\Action\Stripe\WebhookAction;
+use Tds\CustomerApi\Action\TimeEntry\ListAction as TimeEntryListAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\CreateAction as AdminTimeEntryCreateAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\DeleteAction as AdminTimeEntryDeleteAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\ListAction as AdminTimeEntryListAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\TimerCurrentAction as AdminTimerCurrentAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\TimerStartAction as AdminTimerStartAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\TimerStopAction as AdminTimerStopAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\UpdateAction as AdminTimeEntryUpdateAction;
 use Tds\CustomerApi\Infrastructure\Database;
 use Tds\CustomerApi\Middleware\AdminAuthMiddleware;
 use Tds\CustomerApi\Middleware\AuditLogMiddleware;
@@ -30,6 +39,7 @@ use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
 use Tds\CustomerApi\Service\DocumentSigner;
 use Tds\CustomerApi\Service\JwksClient;
+use Tds\CustomerApi\Service\TimeEntryRepository;
 
 final class Bootstrap
 {
@@ -58,6 +68,10 @@ final class Bootstrap
 
         $container->set(DocumentSigner::class, fn () => new DocumentSigner(
             self::env('DOCUMENT_SIGN_SECRET'),
+        ));
+
+        $container->set(TimeEntryRepository::class, fn (Container $c) => new TimeEntryRepository(
+            $c->get(PDO::class),
         ));
 
         $container->set(CreateCustomerAction::class, fn (Container $c) => new CreateCustomerAction(
@@ -90,6 +104,17 @@ final class Bootstrap
         // Admin endpoints — Bearer ADMIN_TOKEN. Not behind JwksAuth
         // because admin tooling carries the shared token, not a JWT.
         $app->post('/admin/customers', CreateCustomerAction::class)->add($admin);
+        $app->get('/admin/projects', AdminListProjectsAction::class)->add($admin);
+
+        $app->group('/admin/time-entries', function ($g) {
+            $g->get('', AdminTimeEntryListAction::class);
+            $g->post('', AdminTimeEntryCreateAction::class);
+            $g->get('/timer', AdminTimerCurrentAction::class);
+            $g->post('/timer/start', AdminTimerStartAction::class);
+            $g->post('/timer/stop', AdminTimerStopAction::class);
+            $g->patch('/{id:[0-9]+}', AdminTimeEntryUpdateAction::class);
+            $g->delete('/{id:[0-9]+}', AdminTimeEntryDeleteAction::class);
+        })->add($admin);
 
         // All other endpoints require a valid JWT. AuditLog runs
         // inside the auth group so every authenticated request is
@@ -97,6 +122,7 @@ final class Bootstrap
         $app->group('', function ($g) {
             $g->get('/projects', ProjectListAction::class);
             $g->get('/projects/{id:[0-9]+}', ProjectGetAction::class);
+            $g->get('/projects/{id:[0-9]+}/time-entries', TimeEntryListAction::class);
             $g->get('/invoices', InvoiceListAction::class);
             $g->post('/invoices/{id:[0-9]+}/pay', PayAction::class);
             $g->get('/documents', DocumentListAction::class);
