@@ -1,5 +1,13 @@
 # tds-customer-api
 
+> **Setting this up from scratch?** See [`INSTALL.md`](INSTALL.md) for
+> the step-by-step bring-up (composer → MariaDB → Stripe → env →
+> 8 migrations → smoke test). This README documents endpoints,
+> configuration and operational notes.
+
+---
+
+
 Customer portal data API — projects, invoices, documents, messages.
 **PHP 8.3 + Slim 4 + PDO + Phinx + Stripe** with **JWKS auth**
 against `tds-auth-api`. Deploys to **netcup Webhosting 8000** at
