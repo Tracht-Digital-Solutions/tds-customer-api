@@ -19,18 +19,29 @@ All require a customer JWT (`admin=false, customer_id=N`) issued by
 |---|---|---|
 | `GET` | `/healthz` | Liveness probe — DB/Stripe/blob storage state |
 | `POST` | `/admin/customers` | **Admin onboarding** (Bearer `ADMIN_TOKEN`): insert customer + ask tds-auth-api to store credential; returns `{customer, tempPassword}` once |
+| `GET` | `/admin/projects` | **Admin**: flat list of all projects with customer + milestones (used by the admin time-tracking picker) |
+| `GET` | `/admin/time-entries` | **Admin**: list time entries with filters (`projectId`, `customerId`, `from`, `to`, `includeRunning`) |
+| `POST` | `/admin/time-entries` | **Admin**: manual entry — accepts either `ended_at` or `duration_minutes`, fills the other |
+| `PATCH` | `/admin/time-entries/{id}` | **Admin**: update an entry (refuses to edit a still-running timer row) |
+| `DELETE` | `/admin/time-entries/{id}` | **Admin**: delete an entry |
+| `GET` | `/admin/time-entries/timer` | **Admin**: current running timer row joined with project + milestone titles, or `null` |
+| `POST` | `/admin/time-entries/timer/start` | **Admin**: open a row with `ended_at IS NULL`; 409 if one is already running |
+| `POST` | `/admin/time-entries/timer/stop` | **Admin**: finalise the running entry (server computes duration from `started_at` → `NOW()`) |
 | `GET` | `/projects` | List customer's projects |
 | `GET` | `/projects/{id}` | Project detail with milestones |
+| `GET` | `/projects/{id}/time-entries` | Read-only finished time entries for the customer's own project, with total + per-milestone breakdown |
 | `GET` | `/invoices` | List invoices |
 | `POST` | `/invoices/{id}/pay` | Create Stripe Checkout session |
 | `POST` | `/stripe/webhook` | Stripe → mark invoice paid (signature auth) |
 | `GET` | `/documents?projectId=` | List documents |
 | `POST` | `/documents` | Multipart upload (25 MB cap, mime allowlist) |
+| `PATCH` | `/documents/{id}` | Rename the user-visible filename only (`storage_path` is left alone) |
 | `GET` | `/documents/{id}/download` | Stream file (JWT auth) |
 | `POST` | `/documents/{id}/sign` | Issue a signed URL (default TTL 5 min, max 1 h) |
 | `GET` | `/documents/sign?d=&c=&exp=&sig=` | Stream via signed URL — no JWT required |
-| `GET` | `/messages?projectId=` | Message thread |
+| `GET` | `/messages?projectId=` | Message thread (response includes `edited_at` per row) |
 | `POST` | `/messages` | Send message (author derived from JWT) |
+| `PATCH` | `/messages/{id}` | Edit body. Customer can edit own `author_type='customer'` messages; admin can edit any. Sets `edited_at = NOW()`. |
 
 ---
 
@@ -56,8 +67,8 @@ docker run --rm -d --name tds-customer-maria \
 
 ## Manual deploy
 
-The repo ships an automated `.github/workflows/deploy.yml`. To
-deploy by hand:
+Auto-deploy via GitHub Actions was removed — every push used to
+fail on the netcup SFTP step regardless. Deploy now goes by hand:
 
 ```bash
 # 1. Install no-dev deps locally
@@ -77,6 +88,12 @@ composer install --no-dev --optimize-autoloader
 The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on
 netcup carries the secrets and is symlinked into each release.
 
+> **Migration heads-up**: `20260519000001_create_time_entry` adds the
+> time-tracking table and `20260519000002_add_message_edited_at`
+> adds the column the inline message-edit feature relies on. Both
+> need `composer migrate:prod` (or the install-php hook with
+> `migrate=1`) before the new endpoints start working.
+
 ---
 
 ## Configuration
@@ -94,10 +111,10 @@ netcup carries the secrets and is symlinked into each release.
 | `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins |
 | `APP_ENV` | `production` strips stack traces |
 
-GitHub Actions deploy workflow also needs:
-- `secrets.NETCUP_FTP_HOST` / `NETCUP_FTP_USER` / `NETCUP_FTP_PASSWORD`
-- `secrets.INSTALL_TOKEN`
-- `vars.INSTALLER_URL`
+No GitHub Actions secrets are needed today — the deploy workflow
+was removed. The five netcup-related Repository Secrets
+(`NETCUP_FTP_*`, `INSTALL_TOKEN`) and the `INSTALLER_URL` variable
+are unused and can be cleaned up at your leisure.
 
 ---
 
