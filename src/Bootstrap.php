@@ -22,6 +22,7 @@ use Tds\CustomerApi\Action\Invoice\ListAction as InvoiceListAction;
 use Tds\CustomerApi\Action\Invoice\PayAction;
 use Tds\CustomerApi\Action\Message\CreateAction as MessageCreateAction;
 use Tds\CustomerApi\Action\Message\ListAction as MessageListAction;
+use Tds\CustomerApi\Action\Message\UpdateAction as MessageUpdateAction;
 use Tds\CustomerApi\Action\Project\GetAction as ProjectGetAction;
 use Tds\CustomerApi\Action\Project\ListAction as ProjectListAction;
 use Tds\CustomerApi\Action\Stripe\WebhookAction;
@@ -133,6 +134,7 @@ final class Bootstrap
             $g->post('/documents/{id:[0-9]+}/sign', SignAction::class);
             $g->get('/messages', MessageListAction::class);
             $g->post('/messages', MessageCreateAction::class);
+            $g->patch('/messages/{id:[0-9]+}', MessageUpdateAction::class);
         })->add($audit)->add($auth);
 
         return $app;

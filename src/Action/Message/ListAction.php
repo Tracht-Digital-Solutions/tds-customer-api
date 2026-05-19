@@ -21,7 +21,7 @@ final class ListAction extends BaseAction
         $customerId = $this->customerId($request);
         $projectId = $request->getQueryParams()['projectId'] ?? null;
 
-        $sql = "SELECT id, customer_id, project_id, author_type, body, created_at, read_at "
+        $sql = "SELECT id, customer_id, project_id, author_type, body, created_at, read_at, edited_at "
              . "FROM message WHERE customer_id = :cid";
         $params = ['cid' => $customerId];
 
