@@ -13,6 +13,7 @@ use Tds\CustomerApi\Action\Admin\CreateCustomerAction;
 use Tds\CustomerApi\Action\Admin\ListProjectsAction as AdminListProjectsAction;
 use Tds\CustomerApi\Action\Document\DownloadAction;
 use Tds\CustomerApi\Action\Document\ListAction as DocumentListAction;
+use Tds\CustomerApi\Action\Document\RenameAction as DocumentRenameAction;
 use Tds\CustomerApi\Action\Document\SignAction;
 use Tds\CustomerApi\Action\Document\SignedDownloadAction;
 use Tds\CustomerApi\Action\Document\UploadAction;
@@ -127,6 +128,7 @@ final class Bootstrap
             $g->post('/invoices/{id:[0-9]+}/pay', PayAction::class);
             $g->get('/documents', DocumentListAction::class);
             $g->post('/documents', UploadAction::class);
+            $g->patch('/documents/{id:[0-9]+}', DocumentRenameAction::class);
             $g->get('/documents/{id:[0-9]+}/download', DownloadAction::class);
             $g->post('/documents/{id:[0-9]+}/sign', SignAction::class);
             $g->get('/messages', MessageListAction::class);
