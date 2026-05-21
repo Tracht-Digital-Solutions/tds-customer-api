@@ -61,6 +61,7 @@ cp .env.example .env       # fill DB + Stripe + AUTH_API_URL +
                            # DOCUMENT_ROOT_DIR + DOCUMENT_SIGN_SECRET
 composer migrate
 composer start             # http://localhost:8004
+composer test              # run the PHPUnit suite (see INSTALL.md §6)
 ```
 
 Use Docker MariaDB:

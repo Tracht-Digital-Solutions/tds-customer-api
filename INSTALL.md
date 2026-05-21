@@ -140,7 +140,52 @@ curl -s http://localhost:8004/admin/time-entries \
 stripe listen --forward-to localhost:8004/stripe/webhook
 ```
 
-## 6. Production deployment (manual)
+## 6. Tests
+
+Pure unit tests cover `DocumentSigner` (HMAC round-trip + tamper +
+expiry), `BaseAction` (`customerId` claim extraction), both auth
+middlewares (`AdminAuthMiddleware`, `JwksAuthMiddleware` — via a
+`TokenVerifier` stub so we don't spin a JWKS server). They run
+without any external dependencies:
+
+```bash
+composer test
+```
+
+The following are **integration tests** that exercise real MariaDB —
+`TimeEntryRepositoryTest`, `AuditLogMiddlewareTest`,
+`Action\Project\ListActionTest` (cross-tenant isolation guard).
+Without `TDS_TEST_DB_DSN` set they skip cleanly.
+
+Spin up a throwaway test DB (port `3399` so it doesn't clash with the
+four per-repo dev DBs):
+
+```bash
+docker run --rm -d \
+  --name tds-test-maria \
+  -e MARIADB_ROOT_PASSWORD=test \
+  -e MARIADB_DATABASE=tds_test \
+  -p 3399:3306 \
+  mariadb:11
+```
+
+Export the connection and re-run the suite:
+
+```bash
+export TDS_TEST_DB_DSN="mysql:host=127.0.0.1;port=3399;dbname=tds_test;charset=utf8mb4"
+export TDS_TEST_DB_USER=root
+export TDS_TEST_DB_PASS=test
+composer test
+```
+
+The integration tests drop + recreate the tables they touch on every
+run (incl. setting up `customer`, `project`, `milestone` for the
+foreign-key parents on `time_entry`), so no `composer migrate` against
+the test DB is needed. The same container can be reused by every TDS
+API's test suite — just don't run two of them in parallel against it
+(the schemas overlap).
+
+## 7. Production deployment (manual)
 
 ```bash
 composer install --no-dev --optimize-autoloader
@@ -165,7 +210,7 @@ so documents survive across releases.
 > the response that both `time_entry` and the updated `message`
 > table are present.
 
-## 7. Wire Stripe Webhook
+## 8. Wire Stripe Webhook
 
 In production:
 - Stripe Dashboard → Developers → Webhooks
@@ -202,3 +247,7 @@ chmod 700.
 **Stripe webhook returns 400 `Webhook signature verification failed`.**
 `STRIPE_WEBHOOK_SECRET` mismatch. Get the secret from the Stripe
 Dashboard endpoint config, not from a test event.
+
+**`composer test` fails with `Cannot find PHPUnit`.**
+You installed with `--no-dev`. Re-run plain `composer install` to
+pull `phpunit/phpunit` from `require-dev`.
