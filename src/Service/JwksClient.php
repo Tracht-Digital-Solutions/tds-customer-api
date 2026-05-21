@@ -12,7 +12,7 @@ use GuzzleHttp\Client;
  * Fetches JWKS from tds-auth-api and caches it on disk for the
  * configured TTL. Verifies bearer tokens against the cached keys.
  */
-final class JwksClient
+final class JwksClient implements TokenVerifier
 {
     public function __construct(
         private readonly Client $http,

@@ -8,7 +8,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\Psr7\Response;
-use Tds\CustomerApi\Service\JwksClient;
+use Tds\CustomerApi\Service\TokenVerifier;
 
 /**
  * Verifies the Authorization Bearer JWT against the JWKS served by
@@ -23,7 +23,7 @@ final class JwksAuthMiddleware implements MiddlewareInterface
     public const COOKIE_NAME = 'tds_session';
     public const ATTR_CLAIMS = 'claims';
 
-    public function __construct(private readonly JwksClient $jwks)
+    public function __construct(private readonly TokenVerifier $jwks)
     {
     }
 
