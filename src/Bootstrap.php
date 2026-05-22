@@ -9,6 +9,8 @@ use GuzzleHttp\Client as GuzzleClient;
 use PDO;
 use Slim\App;
 use Slim\Factory\AppFactory;
+use Tds\CustomerApi\Action\Account\GetMeAction;
+use Tds\CustomerApi\Action\Account\UpdateMeAction;
 use Tds\CustomerApi\Action\Admin\CreateCustomerAction;
 use Tds\CustomerApi\Action\Admin\ListProjectsAction as AdminListProjectsAction;
 use Tds\CustomerApi\Action\Document\DownloadAction;
@@ -122,6 +124,8 @@ final class Bootstrap
         // inside the auth group so every authenticated request is
         // recorded with the JWT claims attached.
         $app->group('', function ($g) {
+            $g->get('/me', GetMeAction::class);
+            $g->patch('/me', UpdateMeAction::class);
             $g->get('/projects', ProjectListAction::class);
             $g->get('/projects/{id:[0-9]+}', ProjectGetAction::class);
             $g->get('/projects/{id:[0-9]+}/time-entries', TimeEntryListAction::class);
