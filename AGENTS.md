@@ -9,7 +9,10 @@ on netcup's filesystem under `\$DOCUMENT_ROOT_DIR/{customer_id}/`.
 - `JwksAuthMiddleware` fetches/caches the JWKS from `tds-auth-api`
   and verifies every Bearer JWT before actions run. Decoded claims
   attached as `request.getAttribute('claims')`. `BaseAction::customerId()`
-  is the recommended accessor.
+  is the recommended accessor. The middleware depends on a tiny
+  `Service\TokenVerifier` interface (one method, `verify`) so it
+  can be unit-tested without spinning a JWKS server;
+  `JwksClient implements TokenVerifier`, wired by the DI container.
 - `Stripe\WebhookAction` is the **one** route NOT behind that
   middleware — Stripe authenticates via header signature, verified
   inside the action using `Webhook::constructEvent()`.
@@ -83,6 +86,25 @@ Two endpoints let a customer modify their own data in place:
   `author_type='customer'` messages; admin can edit any. Sets
   `edited_at = NOW()` so the frontend can render a "(bearbeitet)"
   indicator. Same body length validation as create (1–10 000 chars).
+
+## Tests
+
+PHPUnit 10. `composer test` runs the suite.
+
+- **Pure unit**: `DocumentSigner` (HMAC round-trip, tamper +
+  cross-customer + wrong-secret rejection, expiry), `BaseAction`
+  (claim extraction LogicException paths), `AdminAuthMiddleware`,
+  `JwksAuthMiddleware` (with `tests/Support/FakeTokenVerifier`).
+- **Integration** against real MariaDB: `TimeEntryRepository`
+  (timer + manual flows, ownership checks),
+  `AuditLogMiddleware` (actor/target/IP recording, graceful
+  failure when audit_log is unavailable),
+  `Action\\Project\\ListAction` (cross-tenant isolation guard).
+  Set `TDS_TEST_DB_DSN` (+ `_USER` / `_PASS`) to run; otherwise
+  they skip. Tests drop + recreate the tables they touch on every
+  run, so no `composer migrate` against the test DB.
+
+See INSTALL.md §6 for the throwaway-Docker test DB recipe.
 
 ## Don't
 
