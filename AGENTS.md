@@ -116,3 +116,21 @@ See INSTALL.md §6 for the throwaway-Docker test DB recipe.
 - Don't let actions read `_GET[customer_id]` — always pull
   customer_id from the JWT via `BaseAction::customerId()`. Trusting
   query params here would cross trust boundaries.
+- Don't write `$_ENV[$key] ?? getenv($key) ?: $default` in env
+  helpers. PHP binds `??` tighter than `?:`, so this parses as
+  `($_ENV[$key] ?? getenv($key)) ?: $default` and silently
+  clobbers any legitimately falsy value (`"0"`, `""`) with the
+  default. Use explicit `?? false` checks instead. Bit all four
+  API repos at once via copy-paste — see #13 (this repo) /
+  auth #11 / contact #7 / content #13.
+- Don't add a `self::env('FOO')` (no default → required) without
+  also adding `FOO=` to `.env.example`. We caught
+  `DOCUMENT_SIGN_SECRET` and `ADMIN_TOKEN` drifting out of sync
+  with the code in #14 — anyone copying the example to `.env`
+  would have a non-booting app.
+- Don't widen `Access-Control-Allow-Methods` in `CorsMiddleware`
+  beyond the methods actually routed here, but don't forget to
+  *narrow* it either: when a new method joins the router (e.g.
+  PATCH/DELETE inside the JWT group), add it to the header in
+  the same commit. #13 caught PATCH + DELETE missing for half
+  the customer surface.
