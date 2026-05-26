@@ -162,7 +162,13 @@ final class Bootstrap
     /** @return string[] */
     private static function corsOrigins(): array
     {
-        $raw = $_ENV['CORS_ALLOWED_ORIGINS'] ?? getenv('CORS_ALLOWED_ORIGINS') ?: '';
+        $raw = $_ENV['CORS_ALLOWED_ORIGINS'] ?? false;
+        if ($raw === false) {
+            $raw = getenv('CORS_ALLOWED_ORIGINS');
+        }
+        if ($raw === false) {
+            $raw = '';
+        }
         return array_values(array_filter(array_map('trim', explode(',', (string) $raw))));
     }
 }
