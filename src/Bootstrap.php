@@ -146,8 +146,14 @@ final class Bootstrap
 
     private static function env(string $key, ?string $default = null): string
     {
-        $v = $_ENV[$key] ?? getenv($key) ?: $default;
-        if ($v === null || $v === false) {
+        $v = $_ENV[$key] ?? false;
+        if ($v === false) {
+            $v = getenv($key);
+        }
+        if ($v === false) {
+            $v = $default;
+        }
+        if ($v === null) {
             throw new \RuntimeException("Missing required env var: {$key}");
         }
         return (string) $v;
