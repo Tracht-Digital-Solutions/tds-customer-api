@@ -15,21 +15,21 @@ final class AdminAuthMiddlewareTest extends TestCase
 {
     public function test_missing_header_returns_401(): void
     {
-        $response = $this->run(new AdminAuthMiddleware('expected'), bearer: null);
+        $response = $this->dispatch(new AdminAuthMiddleware('expected'), bearer: null);
 
         self::assertSame(401, $response->getStatusCode());
     }
 
     public function test_wrong_token_returns_401(): void
     {
-        $response = $this->run(new AdminAuthMiddleware('expected'), bearer: 'nope');
+        $response = $this->dispatch(new AdminAuthMiddleware('expected'), bearer: 'nope');
 
         self::assertSame(401, $response->getStatusCode());
     }
 
     public function test_unconfigured_returns_401_with_detail(): void
     {
-        $response = $this->run(new AdminAuthMiddleware(''), bearer: 'whatever');
+        $response = $this->dispatch(new AdminAuthMiddleware(''), bearer: 'whatever');
 
         self::assertSame(401, $response->getStatusCode());
         $response->getBody()->rewind();
@@ -56,7 +56,7 @@ final class AdminAuthMiddlewareTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
     }
 
-    private function run(AdminAuthMiddleware $mw, ?string $bearer): ResponseInterface
+    private function dispatch(AdminAuthMiddleware $mw, ?string $bearer): ResponseInterface
     {
         $request = (new ServerRequestFactory())->createServerRequest('GET', '/admin/x');
         if ($bearer !== null) {

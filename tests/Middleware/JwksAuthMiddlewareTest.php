@@ -23,7 +23,7 @@ final class JwksAuthMiddlewareTest extends TestCase
 
     public function test_missing_token_returns_401(): void
     {
-        $response = $this->run((new ServerRequestFactory())->createServerRequest('GET', '/projects'));
+        $response = $this->dispatch((new ServerRequestFactory())->createServerRequest('GET', '/projects'));
 
         self::assertSame(401, $response->getStatusCode());
         self::assertSame('No token presented', $this->jsonBody($response)['detail']);
@@ -37,7 +37,7 @@ final class JwksAuthMiddlewareTest extends TestCase
             ->createServerRequest('GET', '/projects')
             ->withHeader('Authorization', 'Bearer token');
 
-        $response = $this->run($request);
+        $response = $this->dispatch($request);
 
         self::assertSame(401, $response->getStatusCode());
         self::assertStringContainsString('expired', $this->jsonBody($response)['detail']);
@@ -50,7 +50,7 @@ final class JwksAuthMiddlewareTest extends TestCase
             ->createServerRequest('GET', '/projects')
             ->withHeader('Authorization', 'Bearer token');
 
-        $response = $this->run($request);
+        $response = $this->dispatch($request);
 
         self::assertSame(401, $response->getStatusCode());
         self::assertSame('Token has no customer_id', $this->jsonBody($response)['detail']);
@@ -88,7 +88,7 @@ final class JwksAuthMiddlewareTest extends TestCase
             ->createServerRequest('GET', '/projects')
             ->withHeader('Authorization', 'Bearer token');
 
-        $response = $this->run($request);
+        $response = $this->dispatch($request);
 
         self::assertSame(200, $response->getStatusCode());
     }
@@ -101,13 +101,13 @@ final class JwksAuthMiddlewareTest extends TestCase
             ->createServerRequest('GET', '/projects')
             ->withCookieParams([JwksAuthMiddleware::COOKIE_NAME => 'cookie-token']);
 
-        $response = $this->run($request);
+        $response = $this->dispatch($request);
 
         self::assertSame(200, $response->getStatusCode());
         self::assertSame('cookie-token', $this->verifier->lastToken);
     }
 
-    private function run(ServerRequestInterface $request): ResponseInterface
+    private function dispatch(ServerRequestInterface $request): ResponseInterface
     {
         $handler = new class implements RequestHandlerInterface {
             public function handle(ServerRequestInterface $r): ResponseInterface

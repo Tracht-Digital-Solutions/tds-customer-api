@@ -56,7 +56,7 @@ final class AuditLogMiddlewareTest extends TestCase
     public function test_no_claims_skips_logging(): void
     {
         $request = (new ServerRequestFactory())->createServerRequest('GET', '/projects');
-        $this->run($request, status: 200);
+        $this->dispatch($request, status: 200);
 
         self::assertSame(0, $this->count());
     }
@@ -67,7 +67,7 @@ final class AuditLogMiddlewareTest extends TestCase
             ->createServerRequest('GET', '/projects/42', ['REMOTE_ADDR' => '198.51.100.7'])
             ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, ['admin' => false, 'customer_id' => 7]);
 
-        $this->run($request, status: 200);
+        $this->dispatch($request, status: 200);
 
         $row = $this->pdo->query('SELECT * FROM audit_log ORDER BY id DESC LIMIT 1')->fetch();
         self::assertSame('customer', $row['actor_type']);
@@ -87,7 +87,7 @@ final class AuditLogMiddlewareTest extends TestCase
             ->createServerRequest('POST', '/messages')
             ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, ['admin' => true, 'admin_id' => 1]);
 
-        $this->run($request, status: 201);
+        $this->dispatch($request, status: 201);
 
         $row = $this->pdo->query('SELECT * FROM audit_log ORDER BY id DESC LIMIT 1')->fetch();
         self::assertSame('admin', $row['actor_type']);
@@ -102,7 +102,7 @@ final class AuditLogMiddlewareTest extends TestCase
             ->withHeader('X-Forwarded-For', '203.0.113.5, 10.0.0.1')
             ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, ['admin' => false, 'customer_id' => 7]);
 
-        $this->run($request, status: 200);
+        $this->dispatch($request, status: 200);
 
         $row = $this->pdo->query('SELECT ip FROM audit_log ORDER BY id DESC LIMIT 1')->fetch();
         self::assertSame('203.0.113.5', $row['ip']);
@@ -115,12 +115,12 @@ final class AuditLogMiddlewareTest extends TestCase
             ->createServerRequest('GET', '/projects')
             ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, ['admin' => false, 'customer_id' => 7]);
 
-        $response = $this->run($request, status: 200);
+        $response = $this->dispatch($request, status: 200);
 
         self::assertSame(200, $response->getStatusCode(), 'audit failure must not surface to customer');
     }
 
-    private function run(ServerRequestInterface $request, int $status): ResponseInterface
+    private function dispatch(ServerRequestInterface $request, int $status): ResponseInterface
     {
         $handler = new class($status) implements RequestHandlerInterface {
             public function __construct(private int $status) {}
