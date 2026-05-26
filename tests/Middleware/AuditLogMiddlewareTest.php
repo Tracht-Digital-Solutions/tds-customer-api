@@ -58,7 +58,7 @@ final class AuditLogMiddlewareTest extends TestCase
         $request = (new ServerRequestFactory())->createServerRequest('GET', '/projects');
         $this->dispatch($request, status: 200);
 
-        self::assertSame(0, $this->count());
+        self::assertSame(0, $this->auditLogCount());
     }
 
     public function test_customer_request_writes_row(): void
@@ -132,7 +132,7 @@ final class AuditLogMiddlewareTest extends TestCase
         return (new AuditLogMiddleware($this->pdo))->process($request, $handler);
     }
 
-    private function count(): int
+    private function auditLogCount(): int
     {
         return (int) $this->pdo->query('SELECT COUNT(*) FROM audit_log')->fetchColumn();
     }
