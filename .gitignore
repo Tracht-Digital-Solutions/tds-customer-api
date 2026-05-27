@@ -4,8 +4,17 @@
 /var/log/*
 !/var/log/.gitkeep
 /.phpunit.cache/
+.phpunit.result.cache
 /composer.phar
 /.idea/
 /.vscode/
 .DS_Store
 *.log
+
+# Windows OS files
+Thumbs.db
+Desktop.ini
+
+# Editor backups
+*.swp
+*~
