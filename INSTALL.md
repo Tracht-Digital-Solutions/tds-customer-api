@@ -185,30 +185,26 @@ the test DB is needed. The same container can be reused by every TDS
 API's test suite — just don't run two of them in parallel against it
 (the schemas overlap).
 
-## 7. Production deployment (manual)
+## 7. Production deployment
 
-```bash
-composer install --no-dev --optimize-autoloader
+Deployment is automatic: a push to `main` that passes CI fires the
+`deploy` job in `.github/workflows/ci.yml`, which GET-pings the deploy
+webhook so the production host pulls the new release and activates it
+(including migrations).
 
-# SFTP project tree (excluding .env, var/) to the production host at
-# ~/sites/api.tracht-digital.de/customer/releases/<TIMESTAMP>/
+One-time: add the `DEPLOY_WEBHOOK_URL` repository secret — the host's
+deploy-hook URL, with the deploy token carried inside the URL. Until
+it's set the deploy ping is skipped (CI still runs).
 
-# Drop .deploy-complete marker, then trigger install.php:
-curl --fail \
-  "https://api.tracht-digital.de/install.php?action=install-php\
-&target=customer&release=<TIMESTAMP>&migrate=1&token=<INSTALL_TOKEN>"
-```
+The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on the
+production host carries production secrets. **`DOCUMENT_ROOT_DIR` on
+production points at `~/customer-files/` outside the release tree** so
+documents survive across releases.
 
-The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on
-the production host carries production secrets. **`DOCUMENT_ROOT_DIR` on
-production points at `~/customer-files/` outside the release tree**
-so documents survive across releases.
-
-> **Migration heads-up**: if you're deploying for the first time
-> after 2026-05, the two new time-tracking migrations must run.
-> The install.php hook with `migrate=1` handles this; verify in
-> the response that both `time_entry` and the updated `message`
-> table are present.
+> **Migration heads-up**: if you're deploying for the first time after
+> 2026-05, the two new time-tracking migrations must run. The deploy
+> hook runs migrations on activation; verify both `time_entry` and the
+> updated `message` table are present afterwards.
 
 ## 8. Wire Stripe Webhook
 
@@ -237,8 +233,8 @@ JWKS endpoint of tds-auth-api unreachable. Check `AUTH_API_URL` and
 that the auth-api is running.
 
 **`PATCH /messages/{id}` returns 500 with column not found.**
-The `edited_at` migration didn't run. Run `composer migrate` (local)
-or trigger install.php with `migrate=1` (prod).
+The `edited_at` migration didn't run. Run `composer migrate` (local);
+in production the deploy hook runs migrations on activation.
 
 **`POST /documents` returns 503 "storage unavailable".**
 `DOCUMENT_ROOT_DIR` doesn't exist or isn't writable. Recreate +

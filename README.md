@@ -74,28 +74,19 @@ docker run --rm -d --name tds-customer-maria \
 
 ---
 
-## Manual deploy
+## Deploy
 
-Auto-deploy via GitHub Actions was removed — every push used to
-fail on the production host SFTP step regardless. Deploy now goes by hand:
+Deployment is automatic. On a push to `main`, once CI passes, the
+`deploy` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+GET-pings the deploy webhook and the production host pulls the new
+release and activates it (including migrations).
 
-```bash
-# 1. Install no-dev deps locally
-composer install --no-dev --optimize-autoloader
+**Required secret:** set `DEPLOY_WEBHOOK_URL` (repository secret) to the
+host's deploy-hook URL — the deploy token is carried inside the URL. If
+it isn't set, the deploy ping is skipped (CI still runs).
 
-# 2. SFTP the project (excluding .env, var/, vendor cache) to the production host
-#    at ~/sites/api.tracht-digital.de/customer/releases/<TIMESTAMP>/
-
-# 3. Run migrations + activate the release
-#    https://api.tracht-digital.de/install.php?action=install-php
-#        &target=customer
-#        &release=<TIMESTAMP>
-#        &migrate=1
-#        &token=<INSTALL_TOKEN>
-```
-
-The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on
-the production host carries the secrets and is symlinked into each release.
+The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on the
+production host carries the secrets and is symlinked into each release.
 
 > **Migration heads-up**: `20260519000001_create_time_entry` adds the
 > time-tracking table and `20260519000002_add_message_edited_at`
@@ -120,10 +111,9 @@ the production host carries the secrets and is symlinked into each release.
 | `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins |
 | `APP_ENV` | `production` strips stack traces |
 
-No GitHub Actions secrets are needed today — the deploy workflow
-was removed. The five deployment-related Repository Secrets
-(`FTP_*`, `INSTALL_TOKEN`) and the `INSTALLER_URL` variable
-are unused and can be cleaned up at your leisure.
+The only deploy secret is `DEPLOY_WEBHOOK_URL` (the host's deploy-hook
+URL). The old `FTP_*` / `INSTALL_TOKEN` Repository Secrets and the
+`INSTALLER_URL` variable are unused and can be cleaned up at your leisure.
 
 ---
 
