@@ -44,3 +44,27 @@ jobs:
         # pure-unit subset (DocumentSigner, BaseAction,
         # AdminAuthMiddleware, JwksAuthMiddleware) still runs.
         run: composer test
+
+  deploy:
+    # On a push to main (not PRs), after CI passes, ping the production
+    # host's deploy hook so it pulls the new source and goes live. The
+    # deploy token is carried inside DEPLOY_WEBHOOK_URL itself; the step
+    # skips quietly when the secret isn't configured yet.
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Trigger deploy webhook
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+            echo "DEPLOY_WEBHOOK_URL not set - skipping deploy ping."
+            exit 0
+          fi
+          echo "Pinging deploy webhook..."
+          curl -fsS --retry 3 --retry-delay 5 --max-time 30 "$DEPLOY_WEBHOOK_URL"
+          echo "Deploy webhook pinged."
