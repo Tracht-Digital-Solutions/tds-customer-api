@@ -12,7 +12,7 @@ use Slim\Psr7\Response;
  * GET /healthz
  *
  * Liveness + dependency probe. No auth required so a monitor (uptime
- * check, GitHub Actions, netcup CCP cron, etc.) can hit it freely.
+ * check, GitHub Actions, the hosting control panel cron, etc.) can hit it freely.
  *
  * Returns 200 always — components report their own state in the body.
  * If something is "down" the consumer can page on the JSON, but the

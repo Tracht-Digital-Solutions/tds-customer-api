@@ -18,7 +18,7 @@
 | MariaDB | 11.x (or MySQL 8) | `tds_customer` database (8 tables) |
 | Stripe account | — | Checkout sessions for invoice pay |
 | Docker | optional | Local MariaDB |
-| netcup Webhosting | 8000+ | Production target |
+| Production host | shared Apache/PHP | Deploy target |
 
 ## 1. Clone + install
 
@@ -190,7 +190,7 @@ API's test suite — just don't run two of them in parallel against it
 ```bash
 composer install --no-dev --optimize-autoloader
 
-# SFTP project tree (excluding .env, var/) to netcup at
+# SFTP project tree (excluding .env, var/) to the production host at
 # ~/sites/api.tracht-digital.de/customer/releases/<TIMESTAMP>/
 
 # Drop .deploy-complete marker, then trigger install.php:
@@ -200,7 +200,7 @@ curl --fail \
 ```
 
 The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on
-netcup carries production secrets. **`DOCUMENT_ROOT_DIR` on
+the production host carries production secrets. **`DOCUMENT_ROOT_DIR` on
 production points at `~/customer-files/` outside the release tree**
 so documents survive across releases.
 
@@ -216,7 +216,7 @@ In production:
 - Stripe Dashboard → Developers → Webhooks
 - Endpoint: `https://api.tracht-digital.de/customer/stripe/webhook`
 - Events: `checkout.session.completed`, `payment_intent.payment_failed`
-- Reveal the signing secret, paste into the netcup `.env` as
+- Reveal the signing secret, paste into the production host `.env` as
   `STRIPE_WEBHOOK_SECRET`
 
 ## Related repos

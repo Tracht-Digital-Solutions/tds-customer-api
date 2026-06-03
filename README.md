@@ -10,7 +10,7 @@
 
 Customer portal data API — projects, invoices, documents, messages.
 **PHP 8.3 + Slim 4 + PDO + Phinx + Stripe** with **JWKS auth**
-against `tds-auth-api`. Deploys to **netcup Webhosting 8000** at
+against `tds-auth-api`. Deploys to **the production host** at
 `https://api.tracht-digital.de/customer/`.
 
 ---
@@ -77,13 +77,13 @@ docker run --rm -d --name tds-customer-maria \
 ## Manual deploy
 
 Auto-deploy via GitHub Actions was removed — every push used to
-fail on the netcup SFTP step regardless. Deploy now goes by hand:
+fail on the production host SFTP step regardless. Deploy now goes by hand:
 
 ```bash
 # 1. Install no-dev deps locally
 composer install --no-dev --optimize-autoloader
 
-# 2. SFTP the project (excluding .env, var/, vendor cache) to netcup
+# 2. SFTP the project (excluding .env, var/, vendor cache) to the production host
 #    at ~/sites/api.tracht-digital.de/customer/releases/<TIMESTAMP>/
 
 # 3. Run migrations + activate the release
@@ -95,7 +95,7 @@ composer install --no-dev --optimize-autoloader
 ```
 
 The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on
-netcup carries the secrets and is symlinked into each release.
+the production host carries the secrets and is symlinked into each release.
 
 > **Migration heads-up**: `20260519000001_create_time_entry` adds the
 > time-tracking table and `20260519000002_add_message_edited_at`
@@ -121,8 +121,8 @@ netcup carries the secrets and is symlinked into each release.
 | `APP_ENV` | `production` strips stack traces |
 
 No GitHub Actions secrets are needed today — the deploy workflow
-was removed. The five netcup-related Repository Secrets
-(`NETCUP_FTP_*`, `INSTALL_TOKEN`) and the `INSTALLER_URL` variable
+was removed. The five deployment-related Repository Secrets
+(`FTP_*`, `INSTALL_TOKEN`) and the `INSTALLER_URL` variable
 are unused and can be cleaned up at your leisure.
 
 ---

@@ -2,7 +2,7 @@
 
 PHP 8.3 + Slim 4 + PDO + Phinx + Stripe + JWKS verification. Owns
 the `tds_customer` MariaDB database and customer document storage
-on netcup's filesystem under `\$DOCUMENT_ROOT_DIR/{customer_id}/`.
+on the production host's filesystem under `\$DOCUMENT_ROOT_DIR/{customer_id}/`.
 
 ## Mental model
 

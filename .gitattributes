@@ -1,4 +1,4 @@
-# LF for everything that ends up on netcup (Linux)
+# LF for everything that ends up on the production host (Linux)
 *.php       text eol=lf
 *.html      text eol=lf
 *.json      text eol=lf
