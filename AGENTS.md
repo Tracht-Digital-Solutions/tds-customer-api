@@ -4,6 +4,16 @@ PHP 8.3 + Slim 4 + PDO + Phinx + Stripe + JWKS verification. Owns
 the `tds_customer` MariaDB database and customer document storage
 on the production host's filesystem under `\$DOCUMENT_ROOT_DIR/{customer_id}/`.
 
+## Behind the gateway
+
+The public surface `api.tracht-digital.de/customer/*` is fronted by
+`tds-api-gateway`, a Slim reverse proxy that strips the `/customer` prefix and
+forwards to this service (so `…/customer/admin/projects` → this app's
+`/admin/projects`). The path contract is unchanged — routes here still mount
+at root. A push to `main` also fires a `repository_dispatch(api-pushed)` to
+the gateway (needs `GATEWAY_DISPATCH_TOKEN`), which reassembles its `build`
+bundle with this service's new code.
+
 ## Mental model
 
 - `JwksAuthMiddleware` fetches/caches the JWKS from `tds-auth-api`
