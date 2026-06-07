@@ -144,6 +144,12 @@ final class Bootstrap
         return $app;
     }
 
+    /**
+     * Env reader. NB: explicit `?? false` checks — never
+     * `$_ENV[$key] ?? getenv($key) ?: $default`, which clobbers falsy
+     * values ("0", "") because `??` binds tighter than `?:` (the bug
+     * that bit all four APIs via copy-paste).
+     */
     private static function env(string $key, ?string $default = null): string
     {
         $v = $_ENV[$key] ?? false;
