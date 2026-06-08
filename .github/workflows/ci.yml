@@ -66,8 +66,18 @@ jobs:
             exit 0
           fi
           echo "Pinging deploy webhook..."
-          curl -fsS --retry 3 --retry-delay 5 --max-time 30 "$DEPLOY_WEBHOOK_URL"
-          echo "Deploy webhook pinged."
+          # A failed deploy ping must NOT red CI (a wrong URL or a host hiccup
+          # shouldn't mask a green build). Capture the status, never exit
+          # non-zero, and surface a failure as a loud Actions warning instead.
+          # "000" = curl couldn't even connect.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            --retry 3 --retry-delay 5 --max-time 30 \
+            "$DEPLOY_WEBHOOK_URL" || echo "000")
+          if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+            echo "Deploy webhook pinged (HTTP $code)."
+          else
+            echo "::warning title=Deploy webhook failed::Webhook returned HTTP $code - the host was not notified. Check the DEPLOY_WEBHOOK_URL secret."
+          fi
 
       - name: Notify gateway to reassemble
         # Tell tds-api-gateway to rebuild its `build` bundle with this API's
