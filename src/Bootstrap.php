@@ -31,6 +31,7 @@ use Tds\CustomerApi\Action\Stripe\WebhookAction;
 use Tds\CustomerApi\Action\TimeEntry\ListAction as TimeEntryListAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\CreateAction as AdminTimeEntryCreateAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\DeleteAction as AdminTimeEntryDeleteAction;
+use Tds\CustomerApi\Action\Admin\TimeEntry\ExportLexwareAction as AdminTimeEntryExportLexwareAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\ListAction as AdminTimeEntryListAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\TimerCurrentAction as AdminTimerCurrentAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\TimerStartAction as AdminTimerStartAction;
@@ -43,6 +44,8 @@ use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
 use Tds\CustomerApi\Service\DocumentSigner;
 use Tds\CustomerApi\Service\JwksClient;
+use Tds\CustomerApi\Service\LexwareClient;
+use Tds\CustomerApi\Service\LexwareInvoiceBuilder;
 use Tds\CustomerApi\Service\TimeEntryRepository;
 
 final class Bootstrap
@@ -76,6 +79,23 @@ final class Bootstrap
 
         $container->set(TimeEntryRepository::class, fn (Container $c) => new TimeEntryRepository(
             $c->get(PDO::class),
+        ));
+
+        // Lexware Office invoice export from the time tracker. The API key
+        // is optional — when unset the export endpoint returns 503 and the
+        // admin UI shows the feature as unconfigured.
+        $container->set(LexwareInvoiceBuilder::class, fn () => new LexwareInvoiceBuilder());
+        $container->set(LexwareClient::class, fn () => new LexwareClient(
+            http: new GuzzleClient(),
+            apiKey: self::env('LEXWARE_API_KEY', ''),
+            baseUrl: self::env('LEXWARE_API_URL', 'https://api.lexware.io/v1'),
+        ));
+        $container->set(AdminTimeEntryExportLexwareAction::class, fn (Container $c) => new AdminTimeEntryExportLexwareAction(
+            pdo: $c->get(PDO::class),
+            lexware: $c->get(LexwareClient::class),
+            builder: $c->get(LexwareInvoiceBuilder::class),
+            defaultHourlyRate: (float) self::env('LEXWARE_DEFAULT_HOURLY_RATE', '0'),
+            defaultTaxRate: (float) self::env('LEXWARE_TAX_RATE_PERCENT', '19'),
         ));
 
         $container->set(CreateCustomerAction::class, fn (Container $c) => new CreateCustomerAction(
@@ -116,6 +136,7 @@ final class Bootstrap
             $g->get('/timer', AdminTimerCurrentAction::class);
             $g->post('/timer/start', AdminTimerStartAction::class);
             $g->post('/timer/stop', AdminTimerStopAction::class);
+            $g->post('/export-lexware', AdminTimeEntryExportLexwareAction::class);
             $g->patch('/{id:[0-9]+}', AdminTimeEntryUpdateAction::class);
             $g->delete('/{id:[0-9]+}', AdminTimeEntryDeleteAction::class);
         })->add($admin);
