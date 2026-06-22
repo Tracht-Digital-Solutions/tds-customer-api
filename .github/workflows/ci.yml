@@ -30,8 +30,8 @@ jobs:
       - name: Composer validate
         run: composer validate --no-check-publish
 
-      - name: Composer install
-        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Composer install (cached)
+        uses: ramsey/composer-install@v3
 
       - name: PHP syntax check
         run: |
