@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # PR-only — push-to-main check + bundle is handled by dev.yml.
   pull_request:
     branches: [main]
 
@@ -39,61 +38,4 @@ jobs:
             | xargs -0 -n1 -P4 php -l > /dev/null
 
       - name: PHPUnit
-        # Integration tests (TimeEntryRepository, AuditLogMiddleware,
-        # cross-tenant ListAction) skip without TDS_TEST_DB_DSN. The
-        # pure-unit subset (DocumentSigner, BaseAction,
-        # AdminAuthMiddleware, JwksAuthMiddleware) still runs.
         run: composer test
-
-  deploy:
-    # On a push to main (not PRs), after CI passes, ping the production
-    # host's deploy hook so it pulls the new source and goes live. The
-    # deploy token is carried inside DEPLOY_WEBHOOK_URL itself; the step
-    # skips quietly when the secret isn't configured yet.
-    needs: check
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Trigger deploy webhook
-        env:
-          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
-        run: |
-          if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
-            echo "DEPLOY_WEBHOOK_URL not set - skipping deploy ping."
-            exit 0
-          fi
-          echo "Pinging deploy webhook..."
-          # A failed deploy ping must NOT red CI (a wrong URL or a host hiccup
-          # shouldn't mask a green build). Capture the status, never exit
-          # non-zero, and surface a failure as a loud Actions warning instead.
-          # "000" = curl couldn't even connect.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' \
-            --retry 3 --retry-delay 5 --max-time 30 \
-            "$DEPLOY_WEBHOOK_URL" || echo "000")
-          if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
-            echo "Deploy webhook pinged (HTTP $code)."
-          else
-            echo "::warning title=Deploy webhook failed::Webhook returned HTTP $code - the host was not notified. Check the DEPLOY_WEBHOOK_URL secret."
-          fi
-
-      - name: Notify gateway to reassemble
-        # Tell tds-api-gateway to rebuild its `build` bundle with this API's
-        # new code. Skips quietly when the token isn't configured yet.
-        env:
-          GATEWAY_DISPATCH_TOKEN: ${{ secrets.GATEWAY_DISPATCH_TOKEN }}
-        run: |
-          if [ -z "$GATEWAY_DISPATCH_TOKEN" ]; then
-            echo "GATEWAY_DISPATCH_TOKEN not set - skipping gateway dispatch."
-            exit 0
-          fi
-          echo "Dispatching api-pushed to tds-api-gateway..."
-          curl -fsS -X POST \
-            -H "Authorization: Bearer $GATEWAY_DISPATCH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/Tracht-Digital-Solutions/tds-api-gateway/dispatches \
-            -d "{\"event_type\":\"api-pushed\",\"client_payload\":{\"repo\":\"${GITHUB_REPOSITORY}\",\"sha\":\"${GITHUB_SHA}\"}}"
-          echo "Gateway dispatch sent."

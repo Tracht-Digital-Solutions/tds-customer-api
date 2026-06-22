@@ -1,0 +1,54 @@
+name: Dev bundle → dev branch
+
+# Developer version: on every push to main, run the checks and assemble a
+# self-contained production bundle (source + vendor/ + the phinx migration
+# runner), force-published to the orphan `dev` branch. NOT deployed — the
+# config lives in the host .env, so dev/release bundles are identical in
+# content; only release.yml (manual) deploys. Replaces source-on-push deploy.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: dev-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: openssl, fileinfo, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - name: Composer install (cached, with dev for tests)
+        uses: ramsey/composer-install@v3
+
+      - name: PHP syntax check
+        run: find src tests -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - name: PHPUnit
+        run: composer test
+
+      - name: Assemble production bundle
+        run: bash .github/assemble-bundle.sh dev
+
+      - name: Publish bundle to dev branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ github.token }}
+          publish_dir: ./dist
+          publish_branch: dev
+          commit_message: 'dev ${{ github.sha }}'
+          force_orphan: true
