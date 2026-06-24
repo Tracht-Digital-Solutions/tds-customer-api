@@ -21,7 +21,12 @@ use Slim\Psr7\Response;
  */
 final class HealthAction extends BaseAction
 {
-    public function __construct(private readonly PDO $pdo)
+    /**
+     * @param \Closure(): PDO $pdo Lazy provider — resolved inside the try/catch
+     *        below so a DB/config failure reports `db: down` with HTTP 200
+     *        instead of 5xx'ing during construction (the documented contract).
+     */
+    public function __construct(private readonly \Closure $pdo)
     {
     }
 
@@ -39,7 +44,7 @@ final class HealthAction extends BaseAction
     private function checkDb(): string
     {
         try {
-            $this->pdo->query('SELECT 1');
+            ($this->pdo)()->query('SELECT 1');
             return 'ok';
         } catch (\Throwable) {
             return 'down';

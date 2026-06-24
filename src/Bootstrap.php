@@ -66,6 +66,13 @@ final class Bootstrap
             'pass' => self::env('DB_PASS'),
         ]));
 
+        // Health probe resolves PDO lazily (inside its own try/catch) so a
+        // DB/config outage reports `db: down` with HTTP 200 instead of 5xx'ing
+        // during construction.
+        $container->set(HealthAction::class, fn (Container $c) => new HealthAction(
+            static fn (): PDO => $c->get(PDO::class),
+        ));
+
         $container->set(JwksClient::class, fn () => new JwksClient(
             http: new GuzzleClient(['timeout' => 5]),
             jwksUrl: self::env('AUTH_API_URL') . '/.well-known/jwks.json',
