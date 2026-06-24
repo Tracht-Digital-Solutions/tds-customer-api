@@ -59,7 +59,11 @@ jobs:
             exit 0
           fi
           echo "Pinging deploy webhook..."
+          # Plesk's git web-hook only answers POST (a bare GET 404s); -L follows
+          # any panel redirect and re-POSTs. A failed ping still must not red the run.
+          echo "POSTing deploy webhook to $(printf '%s' "$DEPLOY_WEBHOOK_URL" | cut -d/ -f1-3) ..."
           code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST -L --post301 --post302 --post303 \
             --retry 3 --retry-delay 5 --max-time 30 \
             "$DEPLOY_WEBHOOK_URL" || echo "000")
           if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then

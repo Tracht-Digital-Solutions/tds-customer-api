@@ -78,7 +78,7 @@ docker run --rm -d --name tds-customer-maria \
 
 Deployment is automatic. On a push to `main`, once CI passes, the
 `deploy` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-GET-pings the deploy webhook and the production host pulls the new
+POST-pings the deploy webhook and the production host pulls the new
 release and activates it (including migrations).
 
 **Required secret:** set `DEPLOY_WEBHOOK_URL` (repository secret) to the
