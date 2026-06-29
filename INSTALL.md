@@ -187,19 +187,19 @@ API's test suite — just don't run two of them in parallel against it
 
 ## 7. Production deployment
 
-Deployment is automatic: a push to `main` that passes CI fires the
-`deploy` job in `.github/workflows/ci.yml`, which POST-pings the deploy
-webhook so the production host pulls the new release and activates it
-(including migrations).
+In production this API ships inside the **`tds-api-gateway` bundle** as
+`services/customer/` and is served by the gateway in its default **in-process**
+mode (`GATEWAY_MODE=inprocess`): one PHP-FPM app for the whole API surface, **no
+per-service `php -S` process to start**. The full release recipe (Plesk Git
+checkout of the gateway's `release` branch, docroot on `gateway/public`, DBs,
+migrations, `.env`s — most of it via the `/install.php` wizard) lives in the
+gateway repo's **`DEPLOY-PLESK.md`**.
 
-One-time: add the `DEPLOY_WEBHOOK_URL` repository secret — the host's
-deploy-hook URL, with the deploy token carried inside the URL. Until
-it's set the deploy ping is skipped (CI still runs).
-
-The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on the
-production host carries production secrets. **`DOCUMENT_ROOT_DIR` on
-production points at `~/customer-files/` outside the release tree** so
-documents survive across releases.
+This service's config lives at `services/customer/.env` on the host (untracked,
+survives deploys). **`DOCUMENT_ROOT_DIR` on production points at
+`~/customer-files/` outside the release tree** so documents survive across
+releases. A manual *Actions → Release* on this repo dispatches a gateway
+re-assemble + deploy; pushes to `main` only build the (undeployed) `dev` bundle.
 
 > **Migration heads-up**: if you're deploying for the first time after
 > 2026-05, the two new time-tracking migrations must run. The deploy
