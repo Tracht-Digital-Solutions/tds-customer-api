@@ -15,6 +15,19 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: dev
+          MARIADB_DATABASE: tds_customer_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - uses: actions/checkout@v5
 
@@ -39,3 +52,7 @@ jobs:
 
       - name: PHPUnit
         run: composer test
+        env:
+          TDS_TEST_DB_DSN: "mysql:host=127.0.0.1;port=3306;dbname=tds_customer_test;charset=utf8mb4"
+          TDS_TEST_DB_USER: root
+          TDS_TEST_DB_PASS: dev
