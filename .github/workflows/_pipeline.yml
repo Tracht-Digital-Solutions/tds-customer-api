@@ -40,8 +40,9 @@ jobs:
   pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 12
-    permissions:
-      contents: write
+    # No permissions: block here - a reusable workflow cannot request more than
+    # the caller's token holds, and the repo default is read-only. Each caller
+    # grants least-privilege permissions instead.
     services:
       mariadb:
         image: mariadb:11

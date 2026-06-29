@@ -15,6 +15,9 @@ concurrency:
   group: dev-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   bundle:
     uses: ./.github/workflows/_pipeline.yml
