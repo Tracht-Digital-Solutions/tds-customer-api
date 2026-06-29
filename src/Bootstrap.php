@@ -88,6 +88,13 @@ final class Bootstrap
             $c->get(PDO::class),
         ));
 
+        // Resolved lazily (added by class name below) so it never opens a DB
+        // connection at boot — only when an authenticated route actually runs.
+        // Keeps `/healthz` (and app construction) green during a DB outage.
+        $container->set(AuditLogMiddleware::class, fn (Container $c) => new AuditLogMiddleware(
+            $c->get(PDO::class),
+        ));
+
         // Lexware Office invoice export from the time tracker. The API key
         // is optional — when unset the export endpoint returns 503 and the
         // admin UI shows the feature as unconfigured.
@@ -120,7 +127,6 @@ final class Bootstrap
         $app->addErrorMiddleware(self::env('APP_ENV') !== 'production', true, true);
 
         $auth = new JwksAuthMiddleware($container->get(JwksClient::class));
-        $audit = new AuditLogMiddleware($container->get(PDO::class));
         $admin = new AdminAuthMiddleware(self::env('ADMIN_TOKEN', ''));
 
         // Public endpoints — bypass auth
@@ -167,7 +173,7 @@ final class Bootstrap
             $g->get('/messages', MessageListAction::class);
             $g->post('/messages', MessageCreateAction::class);
             $g->patch('/messages/{id:[0-9]+}', MessageUpdateAction::class);
-        })->add($audit)->add($auth);
+        })->add(AuditLogMiddleware::class)->add($auth);
 
         return $app;
     }
