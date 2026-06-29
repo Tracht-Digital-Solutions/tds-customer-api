@@ -1,7 +1,9 @@
 name: CI
 
+# PR-only gate (push-to-main check + bundle is handled by dev.yml).
+# Pipeline body in _pipeline.yml.
+
 on:
-  # PR-only — push-to-main check + bundle is handled by dev.yml.
   pull_request:
     branches: [main]
 
@@ -11,48 +13,9 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    services:
-      mariadb:
-        image: mariadb:11
-        env:
-          MARIADB_ROOT_PASSWORD: dev
-          MARIADB_DATABASE: tds_customer_test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          extensions: openssl, fileinfo, pdo_mysql
-          coverage: none
-          tools: composer:v2
-
-      - name: Composer validate
-        run: composer validate --no-check-publish
-
-      - name: Composer install (cached)
-        uses: ramsey/composer-install@v3
-
-      - name: PHP syntax check
-        run: |
-          find src tests -name '*.php' -print0 \
-            | xargs -0 -n1 -P4 php -l > /dev/null
-
-      - name: PHPUnit
-        run: composer test
-        env:
-          TDS_TEST_DB_DSN: "mysql:host=127.0.0.1;port=3306;dbname=tds_customer_test;charset=utf8mb4"
-          TDS_TEST_DB_USER: root
-          TDS_TEST_DB_PASS: dev
+    uses: ./.github/workflows/_pipeline.yml
+    with:
+      php_extensions: openssl, fileinfo, pdo_mysql
+      db_name: tds_customer_test
+      run_db_tests: true
+    secrets: inherit

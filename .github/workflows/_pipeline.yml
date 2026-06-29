@@ -1,0 +1,147 @@
+name: Pipeline (reusable)
+
+# Single source of truth for this backend's pipeline. Called by ci.yml
+# (PR gate, DB tests on, no bundle), dev.yml (bundle → dev branch) and
+# release.yml (bundle → release branch + deploy ping + gateway dispatch,
+# DB tests on). Behaviour is selected entirely through the inputs below.
+#
+# The MariaDB service is always declared but only used when run_db_tests is
+# true (the DB-backed tests skip unless TDS_TEST_DB_DSN is set).
+
+on:
+  workflow_call:
+    inputs:
+      php_extensions:
+        description: Extensions passed to shivammathur/setup-php.
+        type: string
+        required: true
+      db_name:
+        description: MariaDB database created for the test run.
+        type: string
+        required: true
+      run_db_tests:
+        description: Set TDS_TEST_DB_* so PHPUnit exercises the DB-backed tests.
+        type: boolean
+        default: false
+      publish_branch:
+        description: Orphan branch to publish the assembled bundle to (dev | release). Empty = no bundle.
+        type: string
+        default: ''
+      deploy:
+        description: Ping the deploy webhook after publishing (release only).
+        type: boolean
+        default: false
+      dispatch_gateway:
+        description: Tell tds-api-gateway to reassemble (release only).
+        type: boolean
+        default: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: dev
+          MARIADB_DATABASE: ${{ inputs.db_name }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: ${{ inputs.php_extensions }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Composer validate
+        run: composer validate --no-check-publish
+
+      - name: Composer install (cached, with dev for tests)
+        uses: ramsey/composer-install@v3
+
+      - name: PHP syntax check
+        run: |
+          find src tests -name '*.php' -print0 \
+            | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - name: Configure DB tests
+        # Only point PHPUnit at MariaDB when asked; otherwise the DB-backed
+        # tests skip (TDS_TEST_DB_DSN unset), exactly as the bundle builds did.
+        if: ${{ inputs.run_db_tests }}
+        run: |
+          {
+            echo "TDS_TEST_DB_DSN=mysql:host=127.0.0.1;port=3306;dbname=${{ inputs.db_name }};charset=utf8mb4"
+            echo "TDS_TEST_DB_USER=root"
+            echo "TDS_TEST_DB_PASS=dev"
+          } >> "$GITHUB_ENV"
+
+      - name: PHPUnit
+        run: composer test
+
+      - name: Assemble production bundle
+        if: ${{ inputs.publish_branch != '' }}
+        run: bash .github/assemble-bundle.sh ${{ inputs.publish_branch }}
+
+      - name: Publish bundle to ${{ inputs.publish_branch }} branch
+        if: ${{ inputs.publish_branch != '' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ github.token }}
+          publish_dir: ./dist
+          publish_branch: ${{ inputs.publish_branch }}
+          commit_message: '${{ inputs.publish_branch }} ${{ github.sha }}'
+          force_orphan: true
+
+      - name: Trigger deploy webhook
+        if: ${{ inputs.deploy }}
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+            echo "DEPLOY_WEBHOOK_URL not set - skipping deploy ping."
+            exit 0
+          fi
+          echo "Pinging deploy webhook..."
+          # Plesk's git web-hook only answers POST (a bare GET 404s); -L follows
+          # any panel redirect and re-POSTs. A failed ping still must not red the run.
+          echo "POSTing deploy webhook to $(printf '%s' "$DEPLOY_WEBHOOK_URL" | cut -d/ -f1-3) ..."
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST -L --post301 --post302 --post303 \
+            --retry 3 --retry-delay 5 --max-time 30 \
+            "$DEPLOY_WEBHOOK_URL" || echo "000")
+          if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+            echo "Deploy webhook pinged (HTTP $code)."
+          else
+            echo "::warning title=Deploy webhook failed::Webhook returned HTTP $code - host not notified. Check DEPLOY_WEBHOOK_URL."
+          fi
+
+      - name: Notify gateway to reassemble
+        if: ${{ inputs.dispatch_gateway }}
+        env:
+          GATEWAY_DISPATCH_TOKEN: ${{ secrets.GATEWAY_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GATEWAY_DISPATCH_TOKEN" ]; then
+            echo "GATEWAY_DISPATCH_TOKEN not set - skipping gateway dispatch."
+            exit 0
+          fi
+          echo "Dispatching api-pushed to tds-api-gateway..."
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GATEWAY_DISPATCH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/Tracht-Digital-Solutions/tds-api-gateway/dispatches \
+            -d "{\"event_type\":\"api-pushed\",\"client_payload\":{\"repo\":\"${GITHUB_REPOSITORY}\",\"sha\":\"${GITHUB_SHA}\"}}"
+          echo "Gateway dispatch sent."
