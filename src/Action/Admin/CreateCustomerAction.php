@@ -15,14 +15,20 @@ use Tds\CustomerApi\Action\BaseAction;
 /**
  * POST /admin/customers
  *
- * Onboards a customer: inserts the customer row, generates a temp
- * password, asks tds-auth-api to store the credential. The temp
- * password is returned ONCE in the response — display it to the
- * admin and instruct the customer to change it after first login.
+ * Creates a company (customer profile). Body: {name, email, createLogin?}.
  *
- * Wrapped in a DB transaction. If the downstream call to
- * tds-auth-api/admin/customer-credentials fails, the customer row is
- * rolled back so we don't leave an account that can never log in.
+ * By default (`createLogin` true / omitted) it also provisions an initial owner
+ * login: generates a temp password and asks tds-auth-api to store the
+ * credential as an app_user tied to the new company. The temp password is
+ * returned ONCE. Pass `createLogin: false` to create the company only — the
+ * admin then adds accounts via tds-auth-api `POST /admin/users` (this is how
+ * a company gets several accounts).
+ *
+ * The owner-login path is wrapped in a DB transaction: if the downstream call
+ * to tds-auth-api fails, the customer row is rolled back so we never leave a
+ * company whose owner can't log in.
+ *
+ * Gated by the admin-JWT JwksAuthMiddleware(requireAdmin: true).
  */
 final class CreateCustomerAction extends BaseAction
 {
@@ -30,7 +36,7 @@ final class CreateCustomerAction extends BaseAction
         private readonly PDO $pdo,
         private readonly ClientInterface $http,
         private readonly string $authApiUrl,
-        private readonly string $adminToken,
+        private readonly string $serviceToken,
     ) {
     }
 
@@ -43,6 +49,7 @@ final class CreateCustomerAction extends BaseAction
 
         $name = trim((string) ($body['name'] ?? ''));
         $email = strtolower(trim((string) ($body['email'] ?? '')));
+        $createLogin = !array_key_exists('createLogin', $body) || (bool) $body['createLogin'];
 
         if ($name === '' || strlen($name) > 200) {
             return $this->json($response, 422, ['error' => 'Name required (1–200 chars)']);
@@ -50,8 +57,6 @@ final class CreateCustomerAction extends BaseAction
         if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
             return $this->json($response, 422, ['error' => 'Valid email required']);
         }
-
-        $tempPassword = self::generateTempPassword();
 
         $this->pdo->beginTransaction();
         try {
@@ -69,16 +74,26 @@ final class CreateCustomerAction extends BaseAction
             throw $e;
         }
 
+        if (!$createLogin) {
+            $this->pdo->commit();
+            return $this->json($response, 201, [
+                'customer' => ['id' => $customerId, 'name' => $name, 'email' => $email],
+            ]);
+        }
+
+        $tempPassword = self::generateTempPassword();
+
         try {
             $authResponse = $this->http->request('POST', rtrim($this->authApiUrl, '/') . '/admin/customer-credentials', [
                 'headers' => [
-                    'Authorization' => 'Bearer ' . $this->adminToken,
+                    'Authorization' => 'Bearer ' . $this->serviceToken,
                     'Content-Type' => 'application/json',
                 ],
                 'json' => [
                     'customer_id' => $customerId,
                     'email' => $email,
                     'password' => $tempPassword,
+                    'name' => $name,
                 ],
                 'http_errors' => false,
                 'timeout' => 10,

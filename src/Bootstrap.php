@@ -12,6 +12,7 @@ use Slim\Factory\AppFactory;
 use Tds\CustomerApi\Action\Account\GetMeAction;
 use Tds\CustomerApi\Action\Account\UpdateMeAction;
 use Tds\CustomerApi\Action\Admin\CreateCustomerAction;
+use Tds\CustomerApi\Action\Admin\ListCustomersAction as AdminListCustomersAction;
 use Tds\CustomerApi\Action\Admin\ListProjectsAction as AdminListProjectsAction;
 use Tds\CustomerApi\Action\Document\DownloadAction;
 use Tds\CustomerApi\Action\Document\ListAction as DocumentListAction;
@@ -38,10 +39,10 @@ use Tds\CustomerApi\Action\Admin\TimeEntry\TimerStartAction as AdminTimerStartAc
 use Tds\CustomerApi\Action\Admin\TimeEntry\TimerStopAction as AdminTimerStopAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\UpdateAction as AdminTimeEntryUpdateAction;
 use Tds\CustomerApi\Infrastructure\Database;
-use Tds\CustomerApi\Middleware\AdminAuthMiddleware;
 use Tds\CustomerApi\Middleware\AuditLogMiddleware;
 use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
+use Tds\CustomerApi\Middleware\RequirePermissionMiddleware;
 use Tds\CustomerApi\Service\DocumentSigner;
 use Tds\CustomerApi\Service\JwksClient;
 use Tds\CustomerApi\Service\LexwareClient;
@@ -116,7 +117,9 @@ final class Bootstrap
             pdo: $c->get(PDO::class),
             http: new GuzzleClient(['timeout' => 10, 'connect_timeout' => 5]),
             authApiUrl: self::env('AUTH_API_URL'),
-            adminToken: self::env('ADMIN_TOKEN'),
+            // Server-to-server token for the auth-api onboarding call. Falls
+            // back to the legacy ADMIN_TOKEN until SERVICE_TOKEN is set.
+            serviceToken: self::env('SERVICE_TOKEN', self::env('ADMIN_TOKEN', '')),
         ));
 
         AppFactory::setContainer($container);
@@ -127,7 +130,9 @@ final class Bootstrap
         $app->addErrorMiddleware(self::env('APP_ENV') !== 'production', true, true);
 
         $auth = new JwksAuthMiddleware($container->get(JwksClient::class));
-        $admin = new AdminAuthMiddleware(self::env('ADMIN_TOKEN', ''));
+        $adminJwt = new JwksAuthMiddleware($container->get(JwksClient::class), requireAdmin: true);
+
+        $perm = static fn (string $p) => new RequirePermissionMiddleware($p);
 
         // Public endpoints — bypass auth
         $app->get('/healthz', HealthAction::class);
@@ -138,10 +143,11 @@ final class Bootstrap
         // signature IS the auth — verified inside the action.
         $app->get('/documents/sign', SignedDownloadAction::class);
 
-        // Admin endpoints — Bearer ADMIN_TOKEN. Not behind JwksAuth
-        // because admin tooling carries the shared token, not a JWT.
-        $app->post('/admin/customers', CreateCustomerAction::class)->add($admin);
-        $app->get('/admin/projects', AdminListProjectsAction::class)->add($admin);
+        // Admin endpoints — per-admin JWT (admin=true claim), verified via
+        // JWKS. Replaces the old shared ADMIN_TOKEN gate.
+        $app->post('/admin/customers', CreateCustomerAction::class)->add($adminJwt);
+        $app->get('/admin/customers', AdminListCustomersAction::class)->add($adminJwt);
+        $app->get('/admin/projects', AdminListProjectsAction::class)->add($adminJwt);
 
         $app->group('/admin/time-entries', function ($g) {
             $g->get('', AdminTimeEntryListAction::class);
@@ -152,27 +158,28 @@ final class Bootstrap
             $g->post('/export-lexware', AdminTimeEntryExportLexwareAction::class);
             $g->patch('/{id:[0-9]+}', AdminTimeEntryUpdateAction::class);
             $g->delete('/{id:[0-9]+}', AdminTimeEntryDeleteAction::class);
-        })->add($admin);
+        })->add($adminJwt);
 
-        // All other endpoints require a valid JWT. AuditLog runs
-        // inside the auth group so every authenticated request is
-        // recorded with the JWT claims attached.
-        $app->group('', function ($g) {
+        // All other endpoints require a valid JWT. AuditLog runs inside the
+        // auth group so every authenticated request is recorded with the JWT
+        // claims attached. Each portal action is additionally gated by the
+        // permission its company account must hold (admins bypass).
+        $app->group('', function ($g) use ($perm) {
             $g->get('/me', GetMeAction::class);
             $g->patch('/me', UpdateMeAction::class);
-            $g->get('/projects', ProjectListAction::class);
-            $g->get('/projects/{id:[0-9]+}', ProjectGetAction::class);
-            $g->get('/projects/{id:[0-9]+}/time-entries', TimeEntryListAction::class);
-            $g->get('/invoices', InvoiceListAction::class);
-            $g->post('/invoices/{id:[0-9]+}/pay', PayAction::class);
-            $g->get('/documents', DocumentListAction::class);
-            $g->post('/documents', UploadAction::class);
-            $g->patch('/documents/{id:[0-9]+}', DocumentRenameAction::class);
-            $g->get('/documents/{id:[0-9]+}/download', DownloadAction::class);
-            $g->post('/documents/{id:[0-9]+}/sign', SignAction::class);
-            $g->get('/messages', MessageListAction::class);
-            $g->post('/messages', MessageCreateAction::class);
-            $g->patch('/messages/{id:[0-9]+}', MessageUpdateAction::class);
+            $g->get('/projects', ProjectListAction::class)->add($perm('projects:read'));
+            $g->get('/projects/{id:[0-9]+}', ProjectGetAction::class)->add($perm('projects:read'));
+            $g->get('/projects/{id:[0-9]+}/time-entries', TimeEntryListAction::class)->add($perm('projects:read'));
+            $g->get('/invoices', InvoiceListAction::class)->add($perm('invoices:read'));
+            $g->post('/invoices/{id:[0-9]+}/pay', PayAction::class)->add($perm('invoices:pay'));
+            $g->get('/documents', DocumentListAction::class)->add($perm('documents:read'));
+            $g->post('/documents', UploadAction::class)->add($perm('documents:write'));
+            $g->patch('/documents/{id:[0-9]+}', DocumentRenameAction::class)->add($perm('documents:write'));
+            $g->get('/documents/{id:[0-9]+}/download', DownloadAction::class)->add($perm('documents:read'));
+            $g->post('/documents/{id:[0-9]+}/sign', SignAction::class)->add($perm('documents:sign'));
+            $g->get('/messages', MessageListAction::class)->add($perm('messages:read'));
+            $g->post('/messages', MessageCreateAction::class)->add($perm('messages:write'));
+            $g->patch('/messages/{id:[0-9]+}', MessageUpdateAction::class)->add($perm('messages:write'));
         })->add(AuditLogMiddleware::class)->add($auth);
 
         return $app;

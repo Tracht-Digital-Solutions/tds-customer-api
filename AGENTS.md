@@ -66,17 +66,33 @@ can't poison the data.
 
 ## Admin endpoints
 
-All admin endpoints are gated by `AdminAuthMiddleware` (shared
-`ADMIN_TOKEN`, Bearer). They run server-to-server from tds-admin
-and don't go through the JWT path.
+All admin endpoints are gated by a **per-admin JWT** —
+`JwksAuthMiddleware(requireAdmin: true)` requires an `admin=true` claim
+(verified via JWKS). The shared `ADMIN_TOKEN` no longer gates them; it
+survives only as the `SERVICE_TOKEN` fallback for the one server-to-server
+call below.
 
-- `POST /admin/customers` — onboarding. Wraps the customer-row
-  insert in a transaction and calls into tds-auth-api
-  `POST /admin/customer-credentials` to store the argon2id-hashed
-  temp password. If that downstream call fails, the customer row
-  is rolled back so no account exists that can't log in.
+- `POST /admin/customers` — creates a company. `{name, email, createLogin?}`.
+  With `createLogin` true/omitted it also provisions an owner login: wraps the
+  customer-row insert in a transaction and calls tds-auth-api
+  `POST /admin/customer-credentials` (Bearer `SERVICE_TOKEN`) to create the
+  app_user; rolls back the row if that fails. With `createLogin: false` it
+  creates the company only — extra accounts are added via tds-auth-api
+  `POST /admin/users` (several accounts per company).
+- `GET /admin/customers` — company list for the admin user-management UI
+  (group accounts by company / company picker).
 - `GET /admin/projects` — flat project list with customer + milestones
   baked in, for the admin time-tracking picker.
+
+## Portal permissions
+
+Each customer-portal route is additionally gated by `RequirePermissionMiddleware`
+checking the permission its account must hold — `projects:read`,
+`invoices:read`/`invoices:pay`, `documents:read`/`documents:write`/
+`documents:sign`, `messages:read`/`messages:write` (mirrors tds-shared's
+`PORTAL_PERMISSIONS`). The permission comes from the JWT `permissions` claim;
+admins bypass. Missing permission → 403. Permission changes take effect on the
+user's next login (auth-api revokes their sessions on change).
 - `/admin/time-entries/*` — CRUD plus `/timer`, `/timer/start`,
   `/timer/stop`. `TimeEntryRepository` centralises the running-timer
   lookup so the three timer actions agree on a single contract.

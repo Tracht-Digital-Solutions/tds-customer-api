@@ -107,6 +107,34 @@ final class JwksAuthMiddlewareTest extends TestCase
         self::assertSame('cookie-token', $this->verifier->lastToken);
     }
 
+    public function test_require_admin_rejects_customer_token_with_403(): void
+    {
+        $this->verifier->claims = ['admin' => false, 'customer_id' => 7];
+        $request = (new ServerRequestFactory())
+            ->createServerRequest('GET', '/admin/customers')
+            ->withHeader('Authorization', 'Bearer token');
+
+        $handler = new \Tds\CustomerApi\Tests\Support\StubHandler();
+        $response = (new JwksAuthMiddleware($this->verifier, requireAdmin: true))->process($request, $handler);
+
+        self::assertSame(403, $response->getStatusCode());
+        self::assertFalse($handler->reached);
+    }
+
+    public function test_require_admin_accepts_admin_token(): void
+    {
+        $this->verifier->claims = ['admin' => true];
+        $request = (new ServerRequestFactory())
+            ->createServerRequest('GET', '/admin/customers')
+            ->withHeader('Authorization', 'Bearer token');
+
+        $handler = new \Tds\CustomerApi\Tests\Support\StubHandler();
+        $response = (new JwksAuthMiddleware($this->verifier, requireAdmin: true))->process($request, $handler);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertTrue($handler->reached);
+    }
+
     private function dispatch(ServerRequestInterface $request): ResponseInterface
     {
         $handler = new class implements RequestHandlerInterface {
