@@ -176,7 +176,9 @@ final class Bootstrap
             $g->post('/documents', UploadAction::class)->add($perm('documents:write'));
             $g->patch('/documents/{id:[0-9]+}', DocumentRenameAction::class)->add($perm('documents:write'));
             $g->get('/documents/{id:[0-9]+}/download', DownloadAction::class)->add($perm('documents:read'));
-            $g->post('/documents/{id:[0-9]+}/sign', SignAction::class)->add($perm('documents:sign'));
+            // /sign mints a short-lived signed download URL — part of the read
+            // path, not an e-signature, so it requires documents:read.
+            $g->post('/documents/{id:[0-9]+}/sign', SignAction::class)->add($perm('documents:read'));
             $g->get('/messages', MessageListAction::class)->add($perm('messages:read'));
             $g->post('/messages', MessageCreateAction::class)->add($perm('messages:write'));
             $g->patch('/messages/{id:[0-9]+}', MessageUpdateAction::class)->add($perm('messages:write'));
