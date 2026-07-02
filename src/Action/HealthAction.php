@@ -43,12 +43,34 @@ final class HealthAction extends BaseAction
 
     private function checkDb(): string
     {
+        // Two-stage probe: connectivity first, then schema presence. A bare
+        // `SELECT 1` succeeds against an empty (un-migrated) database, so it
+        // reports `ok` while every real query 500s (tds-customer-api#16).
+        // Probing a real table distinguishes "reachable but never migrated"
+        // from "reachable + ready".
         try {
-            ($this->pdo)()->query('SELECT 1');
-            return 'ok';
+            $pdo = ($this->pdo)();
+            $pdo->query('SELECT 1');
         } catch (\Throwable) {
             return 'down';
         }
+
+        try {
+            $pdo->query('SELECT 1 FROM `customer` LIMIT 1');
+            return 'ok';
+        } catch (\Throwable $e) {
+            return self::isMissingTable($e) ? 'no-schema' : 'down';
+        }
+    }
+
+    /**
+     * MySQL/MariaDB SQLSTATE 42S02 = "base table or view not found", i.e. the
+     * DB is reachable but the migrations were never applied.
+     */
+    private static function isMissingTable(\Throwable $e): bool
+    {
+        return ($e instanceof \PDOException && $e->getCode() === '42S02')
+            || str_contains($e->getMessage(), '42S02');
     }
 
     private function checkStripe(): string
