@@ -25,7 +25,7 @@ All require a customer JWT (`admin=false, customer_id=N`) issued by
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/healthz` | Liveness probe — DB/Stripe/blob storage state |
+| `GET` | `/healthz` | Liveness probe — `db` (`ok`/`no-schema`/`down`) + Stripe/blob storage state. Always HTTP 200; the gateway aggregate reads `db`. |
 | `POST` | `/admin/customers` | **Admin onboarding** (Bearer `ADMIN_TOKEN`): insert customer + ask tds-auth-api to store credential; returns `{customer, tempPassword}` once |
 | `GET` | `/admin/projects` | **Admin**: flat list of all projects with customer + milestones (used by the admin time-tracking picker) |
 | `GET` | `/admin/time-entries` | **Admin**: list time entries with filters (`projectId`, `customerId`, `from`, `to`, `includeRunning`) |
@@ -59,7 +59,7 @@ All require a customer JWT (`admin=false, customer_id=N`) issued by
 composer install
 cp .env.example .env       # fill DB + Stripe + AUTH_API_URL +
                            # DOCUMENT_ROOT_DIR + DOCUMENT_SIGN_SECRET
-composer migrate
+composer migrate           # local dev only — prod is auto-migrated (see below)
 composer start             # http://localhost:8004
 composer test              # run the PHPUnit suite (see INSTALL.md §6)
 ```
@@ -79,7 +79,17 @@ docker run --rm -d --name tds-customer-maria \
 Deployment is automatic. On a push to `main`, once CI passes, the
 `deploy` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 POST-pings the deploy webhook and the production host pulls the new
-release and activates it (including migrations).
+release and activates it.
+
+**Migrations on production apply automatically.** This service is served
+in-process by the `tds-api-gateway` bundle, which runs each service's pending
+Phinx migrations on the first request after a deploy — in-process via Phinx's
+`Manager` API, no `proc_open`, no CLI php (see the gateway's `AGENTS.md` →
+*Auto-migration*). So new migrations (e.g. `create_time_entry`,
+`add_message_edited_at`) apply themselves on the next deploy — no manual
+`composer migrate:prod`. `/healthz` reports the schema state in its `db` field
+(`ok` / `no-schema` / `down`); a reachable-but-un-migrated DB shows `no-schema`
+and flips the gateway aggregate to `503`.
 
 **Required secret:** set `DEPLOY_WEBHOOK_URL` (repository secret) to the
 host's deploy-hook URL — the deploy token is carried inside the URL. If
@@ -87,12 +97,6 @@ it isn't set, the deploy ping is skipped (CI still runs).
 
 The shared `~/sites/api.tracht-digital.de/customer/shared/.env` on the
 production host carries the secrets and is symlinked into each release.
-
-> **Migration heads-up**: `20260519000001_create_time_entry` adds the
-> time-tracking table and `20260519000002_add_message_edited_at`
-> adds the column the inline message-edit feature relies on. Both
-> need `composer migrate:prod` (or the install-php hook with
-> `migrate=1`) before the new endpoints start working.
 
 ---
 
