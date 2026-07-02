@@ -12,7 +12,10 @@ final class CreateProject extends AbstractMigration
             'engine' => 'InnoDB',
             'collation' => 'utf8mb4_unicode_ci',
         ])
-            ->addColumn('customer_id', 'integer')
+            // FK columns must be UNSIGNED to match phinx's auto-increment `id`
+            // (int unsigned). MySQL 8 rejects a signed→unsigned FK (error 3780);
+            // MariaDB tolerated it, which hid this until a MySQL 8 install.
+            ->addColumn('customer_id', 'integer', ['signed' => false])
             ->addColumn('title', 'string', ['limit' => 200])
             ->addColumn('status', 'enum', [
                 'values' => ['discovery', 'in_progress', 'review', 'delivered', 'on_hold'],
@@ -32,7 +35,7 @@ final class CreateProject extends AbstractMigration
             'engine' => 'InnoDB',
             'collation' => 'utf8mb4_unicode_ci',
         ])
-            ->addColumn('project_id', 'integer')
+            ->addColumn('project_id', 'integer', ['signed' => false])
             ->addColumn('title', 'string', ['limit' => 200])
             ->addColumn('status', 'enum', [
                 'values' => ['pending', 'in_progress', 'completed'],

@@ -12,8 +12,10 @@ final class CreateTimeEntry extends AbstractMigration
             'engine' => 'InnoDB',
             'collation' => 'utf8mb4_unicode_ci',
         ])
-            ->addColumn('project_id', 'integer')
-            ->addColumn('milestone_id', 'integer', ['null' => true])
+            // FK columns UNSIGNED to match phinx's auto-increment `id` (MySQL 8
+            // rejects a signed→unsigned FK, error 3780; MariaDB tolerated it).
+            ->addColumn('project_id', 'integer', ['signed' => false])
+            ->addColumn('milestone_id', 'integer', ['null' => true, 'signed' => false])
             ->addColumn('started_at', 'datetime')
             ->addColumn('ended_at', 'datetime', ['null' => true])
             ->addColumn('duration_minutes', 'integer', ['null' => true])

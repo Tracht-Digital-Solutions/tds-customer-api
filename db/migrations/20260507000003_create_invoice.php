@@ -12,8 +12,10 @@ final class CreateInvoice extends AbstractMigration
             'engine' => 'InnoDB',
             'collation' => 'utf8mb4_unicode_ci',
         ])
-            ->addColumn('customer_id', 'integer')
-            ->addColumn('project_id', 'integer', ['null' => true])
+            // FK columns UNSIGNED to match phinx's auto-increment `id` (MySQL 8
+            // rejects a signed→unsigned FK, error 3780; MariaDB tolerated it).
+            ->addColumn('customer_id', 'integer', ['signed' => false])
+            ->addColumn('project_id', 'integer', ['null' => true, 'signed' => false])
             ->addColumn('amount_cents', 'integer')
             ->addColumn('currency', 'string', ['limit' => 3, 'default' => 'EUR'])
             ->addColumn('status', 'enum', [
