@@ -106,7 +106,7 @@ production host carries the secrets and is symlinked into each release.
 |---|---|
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASS` | MariaDB |
 | `AUTH_API_URL` | tds-auth-api base — used for both JWKS verification and the onboarding S2S call (e.g. `https://api.tracht-digital.de/auth`) |
-| `ADMIN_TOKEN` | Shared admin secret — gates `POST /admin/customers` here and is the Bearer we send to tds-auth-api `POST /admin/customer-credentials`. Same value as tds-auth-api's `ADMIN_TOKEN`. |
+| `ADMIN_TOKEN` | Legacy shared secret — no longer gates the admin endpoints (those use a per-admin JWT via JWKS). Survives only as the `SERVICE_TOKEN` fallback: the Bearer we send on the server-to-server `POST /admin/customer-credentials` call to tds-auth-api. Same value as tds-auth-api's `ADMIN_TOKEN`/`SERVICE_TOKEN`. |
 | `JWKS_CACHE_TTL` | Default 600 s |
 | `STRIPE_SECRET_KEY` | Stripe Checkout / portal calls |
 | `STRIPE_WEBHOOK_SECRET` | Verifies `/stripe/webhook` signatures |
