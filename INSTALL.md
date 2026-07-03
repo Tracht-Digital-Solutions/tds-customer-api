@@ -80,7 +80,7 @@ DOCUMENT_ROOT_DIR=./var/customer-files
 DOCUMENT_SIGN_SECRET=$(openssl rand -hex 32)
 
 # CORS — every customer + admin frontend origin
-CORS_ALLOWED_ORIGINS=http://localhost:4321,https://app.tracht-digital.de,https://admin.tracht-digital.de
+CORS_ALLOWED_ORIGINS=http://localhost:4321,https://app.tracht-digital.de,https://management.tracht-digital.de
 ```
 
 ```bash
