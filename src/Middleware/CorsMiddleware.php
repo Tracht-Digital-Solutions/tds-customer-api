@@ -38,7 +38,10 @@ final class CorsMiddleware implements MiddlewareInterface
 
         return $response
             ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
-            ->withHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+            // X-Act-As-Customer lets an admin scope a portal request to a chosen
+            // customer (Admin-Ansicht); it must be allowlisted for the browser
+            // preflight to send it cross-origin (app. → api.).
+            ->withHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Act-As-Customer')
             ->withHeader('Access-Control-Max-Age', '600');
     }
 }

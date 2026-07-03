@@ -97,6 +97,23 @@ user's next login (auth-api revokes their sessions on change).
   `/timer/stop`. `TimeEntryRepository` centralises the running-timer
   lookup so the three timer actions agree on a single contract.
 
+## Admin view — the `X-Act-As-Customer` header
+
+`BaseAction::customerId()` resolves the *effective* customer a request is scoped
+to, so an admin can inspect any customer's portal (the frontend's Admin-Ansicht):
+
+- **Non-admin** → the JWT's own `customer_id` (unchanged; can't be overridden).
+- **Admin** → the `X-Act-As-Customer: <id>` request header when present, else the
+  admin's own linked `customer_id` if the token carries one, else **400** ("No
+  customer selected") — the portal never issues scoped calls in that state, so
+  this is just the guard behind it.
+
+The header is honoured **only** for an `admin=true` token (`JwksAuthMiddleware`
+verified it), so a non-admin echoing it changes nothing — no privilege
+escalation. `CorsMiddleware` allowlists `X-Act-As-Customer` so the browser
+preflight lets `app.` → `api.` send it cross-origin. Every portal action extends
+`BaseAction`, so this is centralised — individual actions need no change.
+
 ## Customer-editable resources
 
 Two endpoints let a customer modify their own data in place:
@@ -117,7 +134,9 @@ PHPUnit 10. `composer test` runs the suite.
 
 - **Pure unit**: `DocumentSigner` (HMAC round-trip, tamper +
   cross-customer + wrong-secret rejection, expiry), `BaseAction`
-  (claim extraction LogicException paths), `AdminAuthMiddleware`,
+  (claim extraction LogicException paths + admin `X-Act-As-Customer`
+  scoping: header wins, own-customer fallback, 400 when neither, and a
+  non-admin's header is ignored), `AdminAuthMiddleware`,
   `JwksAuthMiddleware` (with `tests/Support/FakeTokenVerifier`).
 - **Integration** against real MariaDB: `TimeEntryRepository`
   (timer + manual flows, ownership checks),
