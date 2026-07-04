@@ -29,6 +29,23 @@ use Tds\CustomerApi\Action\Message\UpdateAction as MessageUpdateAction;
 use Tds\CustomerApi\Action\Project\GetAction as ProjectGetAction;
 use Tds\CustomerApi\Action\Project\ListAction as ProjectListAction;
 use Tds\CustomerApi\Action\Stripe\WebhookAction;
+use Tds\CustomerApi\Action\Ticket\AttachmentDownloadAction as TicketAttachmentDownloadAction;
+use Tds\CustomerApi\Action\Ticket\AttachmentUploadAction as TicketAttachmentUploadAction;
+use Tds\CustomerApi\Action\Ticket\CommentAction as TicketCommentAction;
+use Tds\CustomerApi\Action\Ticket\CreateAction as TicketCreateAction;
+use Tds\CustomerApi\Action\Ticket\GetAction as TicketGetAction;
+use Tds\CustomerApi\Action\Ticket\ListAction as TicketListAction;
+use Tds\CustomerApi\Action\Admin\Ticket\AttachmentDownloadAction as AdminTicketAttachmentDownloadAction;
+use Tds\CustomerApi\Action\Admin\Ticket\CommentAction as AdminTicketCommentAction;
+use Tds\CustomerApi\Action\Admin\Ticket\GetAction as AdminTicketGetAction;
+use Tds\CustomerApi\Action\Admin\Ticket\ListAction as AdminTicketListAction;
+use Tds\CustomerApi\Action\Admin\Ticket\UpdateAction as AdminTicketUpdateAction;
+use Tds\CustomerApi\Action\Admin\TicketStatus\CreateAction as TicketStatusCreateAction;
+use Tds\CustomerApi\Action\Admin\TicketStatus\DeleteAction as TicketStatusDeleteAction;
+use Tds\CustomerApi\Action\Admin\TicketStatus\ListAction as TicketStatusListAction;
+use Tds\CustomerApi\Action\Admin\TicketStatus\UpdateAction as TicketStatusUpdateAction;
+use Tds\CustomerApi\Action\Admin\TicketSettings\GetAction as TicketSettingsGetAction;
+use Tds\CustomerApi\Action\Admin\TicketSettings\PutAction as TicketSettingsPutAction;
 use Tds\CustomerApi\Action\TimeEntry\ListAction as TimeEntryListAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\CreateAction as AdminTimeEntryCreateAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\DeleteAction as AdminTimeEntryDeleteAction;
@@ -47,6 +64,7 @@ use Tds\CustomerApi\Service\DocumentSigner;
 use Tds\CustomerApi\Service\JwksClient;
 use Tds\CustomerApi\Service\LexwareClient;
 use Tds\CustomerApi\Service\LexwareInvoiceBuilder;
+use Tds\CustomerApi\Service\TicketMailer;
 use Tds\CustomerApi\Service\TimeEntryRepository;
 
 final class Bootstrap
@@ -113,6 +131,18 @@ final class Bootstrap
             defaultTaxRate: (float) self::env('LEXWARE_TAX_RATE_PERCENT', '19'),
         ));
 
+        // Ticket notification mailer (Resend). Optional — no-ops when
+        // RESEND_API_KEY is unset, and each event is additionally gated by the
+        // ticket_setting toggles, so the whole feature degrades to in-app only.
+        $container->set(TicketMailer::class, fn () => new TicketMailer(
+            http: new GuzzleClient(['timeout' => 8]),
+            apiKey: self::env('RESEND_API_KEY', ''),
+            from: self::env('TICKET_MAIL_FROM', 'Tracht Digital Solutions <noreply@tracht-digital.de>'),
+            adminTo: self::env('TICKET_ADMIN_EMAIL', ''),
+            adminAppUrl: self::env('ADMIN_APP_URL', 'https://management.tracht-digital.de'),
+            customerAppUrl: self::env('CUSTOMER_APP_URL', 'https://app.tracht-digital.de'),
+        ));
+
         $container->set(CreateCustomerAction::class, fn (Container $c) => new CreateCustomerAction(
             pdo: $c->get(PDO::class),
             http: new GuzzleClient(['timeout' => 10, 'connect_timeout' => 5]),
@@ -149,6 +179,25 @@ final class Bootstrap
         $app->get('/admin/customers', AdminListCustomersAction::class)->add($adminJwt);
         $app->get('/admin/projects', AdminListProjectsAction::class)->add($adminJwt);
 
+        // Ticket administration (triage board, status registry, notifications).
+        $app->group('/admin/tickets', function ($g) {
+            $g->get('', AdminTicketListAction::class);
+            $g->get('/{id:[0-9]+}', AdminTicketGetAction::class);
+            $g->patch('/{id:[0-9]+}', AdminTicketUpdateAction::class);
+            $g->post('/{id:[0-9]+}/comments', AdminTicketCommentAction::class);
+            $g->get('/{id:[0-9]+}/attachments/{aid:[0-9]+}', AdminTicketAttachmentDownloadAction::class);
+        })->add($adminJwt);
+
+        $app->group('/admin/ticket-statuses', function ($g) {
+            $g->get('', TicketStatusListAction::class);
+            $g->post('', TicketStatusCreateAction::class);
+            $g->patch('/{id:[0-9]+}', TicketStatusUpdateAction::class);
+            $g->delete('/{id:[0-9]+}', TicketStatusDeleteAction::class);
+        })->add($adminJwt);
+
+        $app->get('/admin/ticket-settings', TicketSettingsGetAction::class)->add($adminJwt);
+        $app->put('/admin/ticket-settings', TicketSettingsPutAction::class)->add($adminJwt);
+
         $app->group('/admin/time-entries', function ($g) {
             $g->get('', AdminTimeEntryListAction::class);
             $g->post('', AdminTimeEntryCreateAction::class);
@@ -182,6 +231,12 @@ final class Bootstrap
             $g->get('/messages', MessageListAction::class)->add($perm('messages:read'));
             $g->post('/messages', MessageCreateAction::class)->add($perm('messages:write'));
             $g->patch('/messages/{id:[0-9]+}', MessageUpdateAction::class)->add($perm('messages:write'));
+            $g->get('/tickets', TicketListAction::class)->add($perm('tickets:read'));
+            $g->post('/tickets', TicketCreateAction::class)->add($perm('tickets:write'));
+            $g->get('/tickets/{id:[0-9]+}', TicketGetAction::class)->add($perm('tickets:read'));
+            $g->post('/tickets/{id:[0-9]+}/comments', TicketCommentAction::class)->add($perm('tickets:write'));
+            $g->post('/tickets/{id:[0-9]+}/attachments', TicketAttachmentUploadAction::class)->add($perm('tickets:write'));
+            $g->get('/tickets/{id:[0-9]+}/attachments/{aid:[0-9]+}', TicketAttachmentDownloadAction::class)->add($perm('tickets:read'));
         })->add(AuditLogMiddleware::class)->add($auth);
 
         return $app;

@@ -99,6 +99,93 @@ abstract class DbTestCase extends TestCase
         SQL);
     }
 
+    protected function createTicketStatusTable(): void
+    {
+        $this->drop('ticket_status');
+        $this->pdo->exec(<<<'SQL'
+            CREATE TABLE ticket_status (
+              id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              name VARCHAR(80) NOT NULL,
+              color VARCHAR(20) NOT NULL DEFAULT 'neutral',
+              sort_order INT NOT NULL DEFAULT 0,
+              visible_to_customer TINYINT(1) NOT NULL DEFAULT 1,
+              is_terminal TINYINT(1) NOT NULL DEFAULT 0,
+              is_default TINYINT(1) NOT NULL DEFAULT 0,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+    }
+
+    /** Seed the three canonical statuses (default / internal-hidden / terminal). */
+    protected function seedTicketStatuses(): void
+    {
+        $this->pdo->exec(
+            "INSERT INTO ticket_status (id, name, color, sort_order, visible_to_customer, is_terminal, is_default) VALUES "
+            . "(1, 'Offen', 'warning', 10, 1, 0, 1),"
+            . "(2, 'Intern prüfen', 'neutral', 20, 0, 0, 0),"
+            . "(3, 'Gelöst', 'success', 30, 1, 1, 0)"
+        );
+    }
+
+    protected function createTicketTable(): void
+    {
+        $this->drop('ticket');
+        $this->pdo->exec(<<<'SQL'
+            CREATE TABLE ticket (
+              id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              customer_id INT UNSIGNED NOT NULL,
+              project_id INT UNSIGNED NULL,
+              status_id INT UNSIGNED NOT NULL,
+              subject VARCHAR(200) NOT NULL,
+              description TEXT NOT NULL,
+              priority ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+              type ENUM('question','bug','feature','other') NOT NULL DEFAULT 'question',
+              assignee_user_id INT UNSIGNED NULL,
+              created_by_type ENUM('customer','owner') NOT NULL,
+              created_by_user_id INT UNSIGNED NULL,
+              customer_action_required TINYINT(1) NOT NULL DEFAULT 0,
+              customer_action_note TEXT NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              closed_at DATETIME NULL,
+              PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+    }
+
+    protected function createTicketCommentTable(): void
+    {
+        $this->drop('ticket_comment');
+        $this->pdo->exec(<<<'SQL'
+            CREATE TABLE ticket_comment (
+              id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              ticket_id INT UNSIGNED NOT NULL,
+              author_type ENUM('customer','owner') NOT NULL,
+              author_user_id INT UNSIGNED NULL,
+              body TEXT NOT NULL,
+              is_internal TINYINT(1) NOT NULL DEFAULT 0,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              edited_at DATETIME NULL,
+              PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+    }
+
+    protected function createTicketSettingTable(): void
+    {
+        $this->drop('ticket_setting');
+        $this->pdo->exec(<<<'SQL'
+            CREATE TABLE ticket_setting (
+              setting_key VARCHAR(60) NOT NULL,
+              setting_value VARCHAR(255) NOT NULL,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (setting_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+    }
+
     /**
      * Build a request carrying JWT claims exactly as JwksAuthMiddleware
      * attaches them after verification.
@@ -113,13 +200,15 @@ abstract class DbTestCase extends TestCase
         bool $admin = false,
         ?array $body = null,
         array $query = [],
+        ?int $uid = null,
     ): ServerRequestInterface {
+        $claims = ['admin' => $admin, 'customer_id' => $customerId];
+        if ($uid !== null) {
+            $claims['uid'] = $uid;
+        }
         $req = (new ServerRequestFactory())
             ->createServerRequest($method, $path)
-            ->withAttribute(
-                JwksAuthMiddleware::ATTR_CLAIMS,
-                ['admin' => $admin, 'customer_id' => $customerId],
-            )
+            ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, $claims)
             ->withQueryParams($query);
 
         return $body === null ? $req : $req->withParsedBody($body);

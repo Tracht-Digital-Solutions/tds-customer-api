@@ -1,0 +1,314 @@
+<?php
+declare(strict_types=1);
+
+namespace Tds\CustomerApi\Service;
+
+use PDO;
+
+/**
+ * Queries + presentation for tickets, their comments and attachments. Centralised
+ * here (rather than inline in each action, as most resources do) because the
+ * ticket read model joins the configurable status registry and applies
+ * per-audience visibility rules that must stay consistent across every endpoint.
+ */
+final class TicketRepository
+{
+    private const SELECT =
+        'SELECT t.id, t.customer_id, t.project_id, t.subject, t.description, t.priority, t.type, '
+        . 't.assignee_user_id, t.created_by_type, t.created_by_user_id, '
+        . 't.customer_action_required, t.customer_action_note, t.created_at, t.updated_at, t.closed_at, '
+        . 's.id AS status_id, s.name AS status_name, s.color AS status_color, '
+        . 's.visible_to_customer AS status_visible, s.is_terminal AS status_terminal '
+        . 'FROM ticket t INNER JOIN ticket_status s ON s.id = t.status_id';
+
+    public function __construct(private readonly PDO $pdo)
+    {
+    }
+
+    /**
+     * Tickets for one customer, newest activity first. Statuses are resolved for
+     * the customer audience (internal-only statuses show a neutral fallback).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function customerList(int $customerId): array
+    {
+        $stmt = $this->pdo->prepare(
+            self::SELECT . ' WHERE t.customer_id = :cid ORDER BY t.updated_at DESC, t.id DESC'
+        );
+        $stmt->execute(['cid' => $customerId]);
+        return array_map(fn (array $r) => $this->present($r, forCustomer: true), $stmt->fetchAll());
+    }
+
+    /**
+     * Admin list with optional filters + the customer's name/email for display.
+     *
+     * @param array{status_id?:int,assignee_user_id?:int,priority?:string,customer_id?:int,q?:string} $filters
+     * @return list<array<string,mixed>>
+     */
+    public function adminList(array $filters): array
+    {
+        $where = [];
+        $params = [];
+        if (isset($filters['status_id'])) {
+            $where[] = 't.status_id = :status_id';
+            $params['status_id'] = $filters['status_id'];
+        }
+        if (isset($filters['assignee_user_id'])) {
+            $where[] = 't.assignee_user_id = :assignee';
+            $params['assignee'] = $filters['assignee_user_id'];
+        }
+        if (isset($filters['priority'])) {
+            $where[] = 't.priority = :priority';
+            $params['priority'] = $filters['priority'];
+        }
+        if (isset($filters['customer_id'])) {
+            $where[] = 't.customer_id = :customer_id';
+            $params['customer_id'] = $filters['customer_id'];
+        }
+        if (isset($filters['q']) && $filters['q'] !== '') {
+            $where[] = '(t.subject LIKE :q OR t.description LIKE :q)';
+            $params['q'] = '%' . $filters['q'] . '%';
+        }
+
+        $sql = 'SELECT t.id, t.customer_id, t.project_id, t.subject, t.description, t.priority, t.type, '
+            . 't.assignee_user_id, t.created_by_type, t.created_by_user_id, '
+            . 't.customer_action_required, t.customer_action_note, t.created_at, t.updated_at, t.closed_at, '
+            . 's.id AS status_id, s.name AS status_name, s.color AS status_color, '
+            . 's.visible_to_customer AS status_visible, s.is_terminal AS status_terminal, '
+            . 'c.name AS customer_name, c.email AS customer_email '
+            . 'FROM ticket t '
+            . 'INNER JOIN ticket_status s ON s.id = t.status_id '
+            . 'INNER JOIN customer c ON c.id = t.customer_id';
+        if ($where !== []) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY t.updated_at DESC, t.id DESC LIMIT 500';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return array_map(function (array $r): array {
+            $ticket = $this->present($r, forCustomer: false);
+            $ticket['customerName'] = (string) $r['customer_name'];
+            $ticket['customerEmail'] = (string) $r['customer_email'];
+            return $ticket;
+        }, $stmt->fetchAll());
+    }
+
+    /** @return array<string,mixed>|null raw joined row (unpresented) */
+    public function findRow(int $id, ?int $customerId = null): ?array
+    {
+        $sql = self::SELECT . ' WHERE t.id = :id';
+        $params = ['id' => $id];
+        if ($customerId !== null) {
+            $sql .= ' AND t.customer_id = :cid';
+            $params['cid'] = $customerId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+        return $row === false ? null : $row;
+    }
+
+    /**
+     * @param array<string,mixed> $data
+     * @return int new ticket id
+     */
+    public function create(array $data): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO ticket (customer_id, project_id, status_id, subject, description, priority, type, '
+            . 'created_by_type, created_by_user_id, created_at, updated_at) '
+            . 'VALUES (:cid, :pid, :sid, :subject, :description, :priority, :type, :cbt, :cbu, NOW(), NOW())'
+        );
+        $stmt->execute([
+            'cid' => $data['customer_id'],
+            'pid' => $data['project_id'],
+            'sid' => $data['status_id'],
+            'subject' => $data['subject'],
+            'description' => $data['description'],
+            'priority' => $data['priority'],
+            'type' => $data['type'],
+            'cbt' => $data['created_by_type'],
+            'cbu' => $data['created_by_user_id'],
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * Whitelisted partial update. Recognised keys: status_id, priority, type,
+     * assignee_user_id, project_id, customer_action_required,
+     * customer_action_note, closed_at. Always bumps updated_at.
+     *
+     * @param array<string,mixed> $fields
+     */
+    public function update(int $id, array $fields): void
+    {
+        $allowed = [
+            'status_id', 'priority', 'type', 'assignee_user_id', 'project_id',
+            'customer_action_required', 'customer_action_note', 'closed_at',
+        ];
+        $sets = [];
+        $params = ['id' => $id];
+        foreach ($allowed as $key) {
+            if (array_key_exists($key, $fields)) {
+                $sets[] = "{$key} = :{$key}";
+                $params[$key] = $fields[$key];
+            }
+        }
+        if ($sets === []) {
+            return;
+        }
+        $sets[] = 'updated_at = NOW()';
+        $stmt = $this->pdo->prepare('UPDATE ticket SET ' . implode(', ', $sets) . ' WHERE id = :id');
+        $stmt->execute($params);
+    }
+
+    public function clearCustomerAction(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE ticket SET customer_action_required = 0, updated_at = NOW() WHERE id = :id'
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
+    public function touch(int $id): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE ticket SET updated_at = NOW() WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function comments(int $ticketId, bool $includeInternal): array
+    {
+        $sql = 'SELECT id, ticket_id, author_type, author_user_id, body, is_internal, created_at, edited_at '
+            . 'FROM ticket_comment WHERE ticket_id = :tid';
+        if (!$includeInternal) {
+            $sql .= ' AND is_internal = 0';
+        }
+        $sql .= ' ORDER BY created_at ASC, id ASC';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute(['tid' => $ticketId]);
+        return array_map(static fn (array $r): array => [
+            'id' => (int) $r['id'],
+            'ticketId' => (int) $r['ticket_id'],
+            'authorType' => (string) $r['author_type'],
+            'authorUserId' => $r['author_user_id'] !== null ? (int) $r['author_user_id'] : null,
+            'body' => (string) $r['body'],
+            'isInternal' => (bool) $r['is_internal'],
+            'createdAt' => (string) $r['created_at'],
+            'editedAt' => $r['edited_at'] !== null ? (string) $r['edited_at'] : null,
+        ], $stmt->fetchAll());
+    }
+
+    /** @param array<string,mixed> $data */
+    public function addComment(array $data): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO ticket_comment (ticket_id, author_type, author_user_id, body, is_internal, created_at) '
+            . 'VALUES (:tid, :at, :au, :body, :internal, NOW())'
+        );
+        $stmt->execute([
+            'tid' => $data['ticket_id'],
+            'at' => $data['author_type'],
+            'au' => $data['author_user_id'],
+            'body' => $data['body'],
+            'internal' => $data['is_internal'] ? 1 : 0,
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function attachments(int $ticketId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, ticket_id, comment_id, filename, mime_type, size_bytes, uploaded_by_type, created_at '
+            . 'FROM ticket_attachment WHERE ticket_id = :tid ORDER BY created_at ASC, id ASC'
+        );
+        $stmt->execute(['tid' => $ticketId]);
+        return array_map(static fn (array $r): array => [
+            'id' => (int) $r['id'],
+            'ticketId' => (int) $r['ticket_id'],
+            'commentId' => $r['comment_id'] !== null ? (int) $r['comment_id'] : null,
+            'filename' => (string) $r['filename'],
+            'mimeType' => (string) $r['mime_type'],
+            'sizeBytes' => (int) $r['size_bytes'],
+            'uploadedByType' => (string) $r['uploaded_by_type'],
+            'createdAt' => (string) $r['created_at'],
+        ], $stmt->fetchAll());
+    }
+
+    /** @param array<string,mixed> $data */
+    public function addAttachment(array $data): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO ticket_attachment (ticket_id, comment_id, filename, storage_path, mime_type, size_bytes, uploaded_by_type, created_at) '
+            . 'VALUES (:tid, :cid, :fn, :sp, :mt, :sb, :ubt, NOW())'
+        );
+        $stmt->execute([
+            'tid' => $data['ticket_id'],
+            'cid' => $data['comment_id'],
+            'fn' => $data['filename'],
+            'sp' => $data['storage_path'],
+            'mt' => $data['mime_type'],
+            'sb' => $data['size_bytes'],
+            'ubt' => $data['uploaded_by_type'],
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /** @return array<string,mixed>|null storage_path row scoped to a ticket */
+    public function findAttachment(int $attachmentId, int $ticketId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT filename, storage_path, mime_type, size_bytes '
+            . 'FROM ticket_attachment WHERE id = :aid AND ticket_id = :tid LIMIT 1'
+        );
+        $stmt->execute(['aid' => $attachmentId, 'tid' => $ticketId]);
+        $row = $stmt->fetch();
+        return $row === false ? null : $row;
+    }
+
+    /**
+     * Turn a joined ticket row into the API shape, resolving the status for the
+     * audience. Customer callers never see an internal-only status label.
+     *
+     * @param array<string,mixed> $r
+     * @return array<string,mixed>
+     */
+    public function present(array $r, bool $forCustomer): array
+    {
+        $status = [
+            'id' => (int) $r['status_id'],
+            'name' => (string) $r['status_name'],
+            'color' => (string) $r['status_color'],
+            'visibleToCustomer' => (bool) $r['status_visible'],
+            'isTerminal' => (bool) $r['status_terminal'],
+        ];
+        if ($forCustomer) {
+            $status = TicketStatusRepository::presentForCustomer($status);
+        }
+
+        return [
+            'id' => (int) $r['id'],
+            'customerId' => (int) $r['customer_id'],
+            'projectId' => $r['project_id'] !== null ? (int) $r['project_id'] : null,
+            'subject' => (string) $r['subject'],
+            'description' => (string) $r['description'],
+            'priority' => (string) $r['priority'],
+            'type' => (string) $r['type'],
+            'assigneeUserId' => $r['assignee_user_id'] !== null ? (int) $r['assignee_user_id'] : null,
+            'createdByType' => (string) $r['created_by_type'],
+            'createdByUserId' => $r['created_by_user_id'] !== null ? (int) $r['created_by_user_id'] : null,
+            'customerActionRequired' => (bool) $r['customer_action_required'],
+            'customerActionNote' => $r['customer_action_note'] !== null ? (string) $r['customer_action_note'] : null,
+            'statusId' => (int) $r['status_id'],
+            'status' => $status,
+            'createdAt' => (string) $r['created_at'],
+            'updatedAt' => (string) $r['updated_at'],
+            'closedAt' => $r['closed_at'] !== null ? (string) $r['closed_at'] : null,
+        ];
+    }
+}

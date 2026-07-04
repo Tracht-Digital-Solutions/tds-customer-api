@@ -28,7 +28,7 @@ at root. The build model is dev/release (see README): a push to `main` auto-asse
   the `storage_path` relative to `\$DOCUMENT_ROOT_DIR`.
 - All actions extend `BaseAction` for the json + customerId helpers.
 
-## Schema (8 migrations)
+## Schema (13 migrations)
 
 - `customer(id, email UNIQUE, name, created_at, updated_at)`
 - `project(id, customer_id FK, title, status, start/target dates, description)`
@@ -38,12 +38,43 @@ at root. The build model is dev/release (see README): a push to `main` auto-asse
 - `message(id, customer_id FK, project_id FK?, author_type, body, created_at, read_at, edited_at)`
 - `audit_log(id, actor_type, actor_id, action, method, path, target_type, target_id, status, ip, created_at)`
 - `time_entry(id, project_id FK, milestone_id FK?, started_at, ended_at?, duration_minutes?, description, source, created_at, updated_at)`
+- `ticket_status(id, name, color, sort_order, visible_to_customer, is_terminal, is_default, …)` — the admin-configurable status registry (seeded with 5 defaults)
+- `ticket(id, customer_id FK, project_id FK?, status_id FK, subject, description, priority, type, assignee_user_id, created_by_type/_user_id, customer_action_required, customer_action_note, created_at, updated_at, closed_at)`
+- `ticket_comment(id, ticket_id FK, author_type, author_user_id?, body, is_internal, created_at, edited_at)`
+- `ticket_attachment(id, ticket_id FK, comment_id FK?, filename, storage_path, mime_type, size_bytes, uploaded_by_type, created_at)`
+- `ticket_setting(setting_key PK, setting_value, updated_at)` — ticket-system settings (notification toggles)
 
 Foreign keys cascade-delete from customer; project FK on invoice/
-document/message uses `ON DELETE SET NULL` so deleting a project
-doesn't lose the financial/document/comm history. `time_entry` is
-the exception — it cascades from project (entries lose meaning
-without their project) and only the milestone link is nullable.
+document/message/ticket uses `ON DELETE SET NULL` so deleting a project
+doesn't lose the financial/document/comm history. `time_entry` and the
+ticket tables cascade from their parent. `ticket.status_id` is **RESTRICT**
+(a status in use can't be deleted). `assignee_user_id` / `*_user_id` reference
+tds-auth-api `app_user.id` and carry **no FK** (different service/DB).
+
+## Tickets
+
+The support ticket system (`/tickets` for customers, `/admin/tickets` for
+admins). Customers open tickets, comment, and attach files; admins triage them —
+assign to a **support agent** (an admin with `is_support_agent` in tds-auth-api;
+the frontend fetches assignable agents from auth-api `/admin/users`), set
+priority/type, move through statuses, add internal notes, and set a "customer
+action required" prompt.
+
+- **Statuses are runtime-configurable** (`ticket_status`), not a fixed ENUM.
+  Each has a chip `color` (neutral|info|success|warning|danger), a
+  `visible_to_customer` flag, an `is_terminal` flag (closing → stamps
+  `closed_at`), and one `is_default` (new tickets start there). When a status is
+  **not** visible to the customer, `TicketRepository::present(…, forCustomer:true)`
+  swaps in a neutral "In Bearbeitung" fallback so internal stages never leak.
+- **Internal notes** (`ticket_comment.is_internal`) are returned only to admin
+  callers — customer read paths filter them out (`includeInternal: false`).
+- **Read model** lives in `TicketRepository` (joins the status registry + applies
+  per-audience visibility) rather than inline SQL, so every endpoint agrees.
+  `TicketStatusRepository` owns the registry, `TicketSettings` the toggles.
+- **Email notifications** (`TicketMailer`, Resend) are opt-in per event via the
+  `ticket_setting` toggles AND no-op entirely when `RESEND_API_KEY` is unset —
+  a failed send never breaks the ticket write. New ticket → admin inbox
+  (`TICKET_ADMIN_EMAIL`); visible status change / public reply → customer.
 
 ## Time tracking
 
@@ -89,8 +120,8 @@ call below.
 Each customer-portal route is additionally gated by `RequirePermissionMiddleware`
 checking the permission its account must hold — `projects:read`,
 `invoices:read`/`invoices:pay`, `documents:read`/`documents:write`/
-`documents:sign`, `messages:read`/`messages:write` (mirrors tds-shared's
-`PORTAL_PERMISSIONS`). The permission comes from the JWT `permissions` claim;
+`documents:sign`, `messages:read`/`messages:write`, `tickets:read`/`tickets:write`
+(mirrors tds-shared's `PORTAL_PERMISSIONS`). The permission comes from the JWT `permissions` claim;
 admins bypass. Missing permission → 403. Permission changes take effect on the
 user's next login (auth-api revokes their sessions on change).
 - `/admin/time-entries/*` — CRUD plus `/timer`, `/timer/start`,
@@ -142,7 +173,11 @@ PHPUnit 10. `composer test` runs the suite.
   (timer + manual flows, ownership checks),
   `AuditLogMiddleware` (actor/target/IP recording, graceful
   failure when audit_log is unavailable),
-  `Action\\Project\\ListAction` (cross-tenant isolation guard).
+  `Action\\Project\\ListAction` (cross-tenant isolation guard),
+  `Action\\Ticket\\TicketActionsTest` (create/list, customer-visibility
+  fallback, cross-tenant 404, reply clears the action flag, internal notes
+  hidden from customers, terminal status closes, assign + filter, status
+  delete-in-use 409).
   Set `TDS_TEST_DB_DSN` (+ `_USER` / `_PASS`) to run; otherwise
   they skip. Tests drop + recreate the tables they touch on every
   run, so no `composer migrate` against the test DB.
@@ -176,4 +211,5 @@ See INSTALL.md §6 for the throwaway-Docker test DB recipe.
   *narrow* it either: when a new method joins the router (e.g.
   PATCH/DELETE inside the JWT group), add it to the header in
   the same commit. #13 caught PATCH + DELETE missing for half
-  the customer surface.
+  the customer surface; the ticket-settings `PUT` added `PUT` to
+  the allowlist the same way.
