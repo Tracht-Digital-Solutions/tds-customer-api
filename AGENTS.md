@@ -158,8 +158,13 @@ Two endpoints let a customer modify their own data in place:
 - `PATCH /documents/{id}` — renames `filename` only. The underlying
   `storage_path` is keyed by UUID and never shown, so we leave it
   alone. Same filename sanitisation as `UploadAction` (a-z 0-9 . _ -).
-  WHERE clause scopes to the JWT-authed customer; non-matching
-  rowCount returns 404 so document IDs can't be enumerated.
+  WHERE clause scopes to the JWT-authed customer; a real miss returns
+  404 so document IDs can't be enumerated. **Gotcha:** this PDO runs
+  without `MYSQL_ATTR_FOUND_ROWS`, so `rowCount()` on the UPDATE reports
+  *changed* rows — 0 when the sanitised name already matches (no
+  timestamp is bumped). A `rowCount()===0` therefore probes ownership
+  with a follow-up SELECT before 404ing, so renaming to the current
+  name (or one that sanitises to it) isn't a spurious 404.
 - `PATCH /messages/{id}` — edits body. Customer can edit own
   `author_type='customer'` messages; admin can edit any. Sets
   `edited_at = NOW()` so the frontend can render a "(bearbeitet)"

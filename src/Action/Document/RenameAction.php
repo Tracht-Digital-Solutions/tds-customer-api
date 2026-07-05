@@ -55,8 +55,20 @@ final class RenameAction extends BaseAction
             'cid' => $customerId,
         ]);
 
+        // rowCount() is 0 both when the document doesn't exist/isn't ours AND
+        // when the sanitised name already matches what's stored — this PDO runs
+        // without MYSQL_ATTR_FOUND_ROWS, so MySQL reports *changed* rows, not
+        // matched, and the UPDATE bumps no timestamp. Distinguish a real miss
+        // from a no-op with an ownership probe so a rename-to-same-name (e.g.
+        // "my report.pdf" collapsing to the stored "my_report.pdf") isn't a 404.
         if ($stmt->rowCount() === 0) {
-            return $this->json($response, 404, ['error' => 'Not found']);
+            $check = $this->pdo->prepare(
+                'SELECT 1 FROM document WHERE id = :id AND customer_id = :cid LIMIT 1'
+            );
+            $check->execute(['id' => $documentId, 'cid' => $customerId]);
+            if ($check->fetchColumn() === false) {
+                return $this->json($response, 404, ['error' => 'Not found']);
+            }
         }
 
         return $this->json($response, 200, ['id' => $documentId, 'filename' => $clean]);
