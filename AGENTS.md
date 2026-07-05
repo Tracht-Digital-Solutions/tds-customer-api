@@ -130,20 +130,26 @@ user's next login (auth-api revokes their sessions on change).
 
 ## Admin view — the `X-Act-As-Customer` header
 
-`BaseAction::customerId()` resolves the *effective* customer a request is scoped
-to, so an admin can inspect any customer's portal (the frontend's Admin-Ansicht):
+`BaseAction::customerId()` resolves the *effective* customer (the **active
+company**) a request is scoped to. `Support\ActiveCompany` is the shared resolver
+(used by both `BaseAction` and `RequirePermissionMiddleware`):
 
-- **Non-admin** → the JWT's own `customer_id` (unchanged; can't be overridden).
-- **Admin** → the `X-Act-As-Customer: <id>` request header when present, else the
-  admin's own linked `customer_id` if the token carries one, else **400** ("No
-  customer selected") — the portal never issues scoped calls in that state, so
-  this is just the guard behind it.
+- **Non-admin (multi-company)** → the `X-Act-As-Customer: <id>` header when the
+  login belongs to that company (from the JWT `companies` claim), else its
+  primary/first company. So a multi-company user switches company via this
+  header; a company they're **not** a member of is ignored (falls back to the
+  primary — no escalation). **Permissions are per active company**:
+  `RequirePermissionMiddleware` checks the permission set of the *active* company
+  (`companies` claim), not a global list.
+- **Admin** → the `X-Act-As-Customer: <id>` header for **any** customer when
+  present, else the admin's own linked `customer_id`, else **400** ("No customer
+  selected"). Admins bypass the permission check.
 
-The header is honoured **only** for an `admin=true` token (`JwksAuthMiddleware`
-verified it), so a non-admin echoing it changes nothing — no privilege
-escalation. `CorsMiddleware` allowlists `X-Act-As-Customer` so the browser
-preflight lets `app.` → `api.` send it cross-origin. Every portal action extends
-`BaseAction`, so this is centralised — individual actions need no change.
+Back-compat: a token issued before multi-company (no `companies` claim) falls
+back to the flat `customer_id` / `permissions` claims. `CorsMiddleware`
+allowlists `X-Act-As-Customer`. `GET /me/companies` returns `[{id, name}]` for
+the login's companies (auth-api's JWT has the ids + per-company perms but not the
+names — those live here) so the portal's company switcher can label them.
 
 ## Customer-editable resources
 

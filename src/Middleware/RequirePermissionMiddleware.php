@@ -8,12 +8,15 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\Psr7\Response;
+use Tds\CustomerApi\Support\ActiveCompany;
 
 /**
- * Per-route portal permission gate. Reads the `permissions` claim attached by
- * JwksAuthMiddleware (which must run first) and rejects with 403 when the
- * required key is absent. Admin principals bypass the check (they hold full
- * access). The permission keys mirror PORTAL_PERMISSIONS in tds-shared.
+ * Per-route portal permission gate. Checks the permission the login holds
+ * **within its active company** (resolved from the JWT `companies` claim + the
+ * `X-Act-As-Customer` header via {@see ActiveCompany}) and rejects with 403 when
+ * the required key is absent. Admin principals bypass the check (they hold full
+ * access). Pre-multi-company tokens fall back to the flat `permissions` claim.
+ * Permission keys mirror PORTAL_PERMISSIONS in tds-shared.
  */
 final class RequirePermissionMiddleware implements MiddlewareInterface
 {
@@ -30,9 +33,8 @@ final class RequirePermissionMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        $permissions = isset($claims['permissions']) && is_array($claims['permissions'])
-            ? $claims['permissions']
-            : [];
+        $activeCompany = ActiveCompany::resolve($claims, $request->getHeaderLine(ActiveCompany::HEADER));
+        $permissions = ActiveCompany::permissionsFor($claims, $activeCompany);
 
         if (!in_array($this->permission, $permissions, true)) {
             $r = new Response(403);

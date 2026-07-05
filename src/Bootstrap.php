@@ -9,6 +9,7 @@ use GuzzleHttp\Client as GuzzleClient;
 use PDO;
 use Slim\App;
 use Slim\Factory\AppFactory;
+use Tds\CustomerApi\Action\Account\CompaniesAction;
 use Tds\CustomerApi\Action\Account\GetMeAction;
 use Tds\CustomerApi\Action\Account\UpdateMeAction;
 use Tds\CustomerApi\Action\Admin\CreateCustomerAction;
@@ -215,6 +216,7 @@ final class Bootstrap
         // permission its company account must hold (admins bypass).
         $app->group('', function ($g) use ($perm) {
             $g->get('/me', GetMeAction::class);
+            $g->get('/me/companies', CompaniesAction::class);
             $g->patch('/me', UpdateMeAction::class);
             $g->get('/projects', ProjectListAction::class)->add($perm('projects:read'));
             $g->get('/projects/{id:[0-9]+}', ProjectGetAction::class)->add($perm('projects:read'));

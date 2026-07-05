@@ -7,6 +7,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Exception\HttpBadRequestException;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
+use Tds\CustomerApi\Support\ActiveCompany;
 
 /**
  * Shared helpers for actions: resolve the effective customer_id, write JSON.
@@ -21,13 +22,15 @@ abstract class BaseAction
     protected const ACTING_CUSTOMER_HEADER = 'X-Act-As-Customer';
 
     /**
-     * The customer this request is scoped to.
+     * The customer (company) this request is scoped to — the *active company*.
      *
-     * - Non-admin: fixed by the JWT's `customer_id` (their own account).
-     * - Admin (Admin-Ansicht): the `X-Act-As-Customer` header when present,
-     *   else the admin's own linked customer if the token carries one. An admin
-     *   with neither has no customer to show → 400 (the portal never issues
-     *   scoped calls in that state; this is the guard behind it).
+     * - Non-admin: the `X-Act-As-Customer` company when the login belongs to it
+     *   (a multi-company login switches company via this header), else its
+     *   primary/first company. Resolved by {@see ActiveCompany}.
+     * - Admin (Admin-Ansicht): the `X-Act-As-Customer` header for ANY customer
+     *   when present, else the admin's own linked customer if the token carries
+     *   one. An admin with neither has no customer to show → 400 (the portal
+     *   never issues scoped calls in that state; this is the guard behind it).
      *
      * Throws if the request didn't go through JwksAuthMiddleware (programmer
      * error).
@@ -51,10 +54,11 @@ abstract class BaseAction
             throw new HttpBadRequestException($request, 'No customer selected for admin view');
         }
 
-        if (!isset($claims['customer_id']) || !is_int($claims['customer_id'])) {
-            throw new \LogicException('JWT claims missing customer_id — check that this action is behind JwksAuthMiddleware');
+        $active = ActiveCompany::resolve($claims, $request->getHeaderLine(self::ACTING_CUSTOMER_HEADER));
+        if ($active === null) {
+            throw new \LogicException('JWT claims carry no company — check that this action is behind JwksAuthMiddleware');
         }
-        return $claims['customer_id'];
+        return $active;
     }
 
     /** @param array<string,mixed> $payload */
