@@ -67,7 +67,15 @@ JWKS_CACHE_TTL=600
 # is what we send to tds-auth-api when onboarding credentials.
 ADMIN_TOKEN=<your 32+ char hex string, same across the three APIs>
 
-# Stripe — test keys for dev, live keys for prod
+# Encrypts secret runtime settings (Stripe/Resend/Lexware keys) at rest in
+# the app_setting table with AES-256-GCM. Generate once per environment; the
+# installer does this automatically. Empty = plaintext storage (dev only).
+SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 32)
+
+# Stripe — test keys for dev, live keys for prod. These (plus Resend/Lexware
+# below) are now ALSO editable at runtime from the admin panel
+# (Einrichtungsassistent / Einstellungen); a non-empty DB value overrides the
+# env var. Leave blank to configure entirely via the admin panel.
 STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxx
 

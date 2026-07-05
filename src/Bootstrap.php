@@ -47,6 +47,8 @@ use Tds\CustomerApi\Action\Admin\TicketStatus\ListAction as TicketStatusListActi
 use Tds\CustomerApi\Action\Admin\TicketStatus\UpdateAction as TicketStatusUpdateAction;
 use Tds\CustomerApi\Action\Admin\TicketSettings\GetAction as TicketSettingsGetAction;
 use Tds\CustomerApi\Action\Admin\TicketSettings\PutAction as TicketSettingsPutAction;
+use Tds\CustomerApi\Action\Admin\AppSettings\GetAction as AppSettingsGetAction;
+use Tds\CustomerApi\Action\Admin\AppSettings\PutAction as AppSettingsPutAction;
 use Tds\CustomerApi\Action\TimeEntry\ListAction as TimeEntryListAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\CreateAction as AdminTimeEntryCreateAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\DeleteAction as AdminTimeEntryDeleteAction;
@@ -61,6 +63,7 @@ use Tds\CustomerApi\Middleware\AuditLogMiddleware;
 use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
 use Tds\CustomerApi\Middleware\RequirePermissionMiddleware;
+use Tds\CustomerApi\Service\AppSettings;
 use Tds\CustomerApi\Service\DocumentSigner;
 use Tds\CustomerApi\Service\JwksClient;
 use Tds\CustomerApi\Service\LexwareClient;
@@ -86,11 +89,21 @@ final class Bootstrap
             'pass' => self::env('DB_PASS'),
         ]));
 
-        // Health probe resolves PDO lazily (inside its own try/catch) so a
-        // DB/config outage reports `db: down` with HTTP 200 instead of 5xx'ing
-        // during construction.
+        // Runtime service-config store (Stripe / ticket mailer / Lexware),
+        // DB-first with .env fallback. Factory only — resolved lazily by the
+        // consumers below and the /admin/settings actions, so boot stays
+        // DB-free.
+        $container->set(AppSettings::class, fn (Container $c) => new AppSettings(
+            $c->get(PDO::class),
+            self::env('SETTINGS_ENCRYPTION_KEY', ''),
+        ));
+
+        // Health probe resolves PDO + settings lazily (inside its own
+        // try/catch) so a DB/config outage reports `db: down` with HTTP 200
+        // instead of 5xx'ing during construction.
         $container->set(HealthAction::class, fn (Container $c) => new HealthAction(
             static fn (): PDO => $c->get(PDO::class),
+            static fn (): AppSettings => $c->get(AppSettings::class),
         ));
 
         $container->set(JwksClient::class, fn () => new JwksClient(
@@ -118,28 +131,33 @@ final class Bootstrap
         // Lexware Office invoice export from the time tracker. The API key
         // is optional — when unset the export endpoint returns 503 and the
         // admin UI shows the feature as unconfigured.
+        // Lexware config now comes from the AppSettings store (DB-first, .env
+        // fallback). Factories are lazy, so the settings lookup only opens a DB
+        // connection when the export endpoint actually runs — boot stays green.
         $container->set(LexwareInvoiceBuilder::class, fn () => new LexwareInvoiceBuilder());
-        $container->set(LexwareClient::class, fn () => new LexwareClient(
+        $container->set(LexwareClient::class, fn (Container $c) => new LexwareClient(
             http: new GuzzleClient(),
-            apiKey: self::env('LEXWARE_API_KEY', ''),
-            baseUrl: self::env('LEXWARE_API_URL', 'https://api.lexware.io/v1'),
+            apiKey: $c->get(AppSettings::class)->get('LEXWARE_API_KEY'),
+            baseUrl: $c->get(AppSettings::class)->get('LEXWARE_API_URL'),
         ));
         $container->set(AdminTimeEntryExportLexwareAction::class, fn (Container $c) => new AdminTimeEntryExportLexwareAction(
             pdo: $c->get(PDO::class),
             lexware: $c->get(LexwareClient::class),
             builder: $c->get(LexwareInvoiceBuilder::class),
-            defaultHourlyRate: (float) self::env('LEXWARE_DEFAULT_HOURLY_RATE', '0'),
-            defaultTaxRate: (float) self::env('LEXWARE_TAX_RATE_PERCENT', '19'),
+            defaultHourlyRate: (float) $c->get(AppSettings::class)->get('LEXWARE_DEFAULT_HOURLY_RATE'),
+            defaultTaxRate: (float) $c->get(AppSettings::class)->get('LEXWARE_TAX_RATE_PERCENT'),
         ));
 
-        // Ticket notification mailer (Resend). Optional — no-ops when
+        // Ticket notification mailer (Resend). Credentials come from the
+        // AppSettings store (DB-first, .env fallback). Optional — no-ops when
         // RESEND_API_KEY is unset, and each event is additionally gated by the
         // ticket_setting toggles, so the whole feature degrades to in-app only.
-        $container->set(TicketMailer::class, fn () => new TicketMailer(
+        // Lazy factory → the DB read happens per-request, never at boot.
+        $container->set(TicketMailer::class, fn (Container $c) => new TicketMailer(
             http: new GuzzleClient(['timeout' => 8]),
-            apiKey: self::env('RESEND_API_KEY', ''),
-            from: self::env('TICKET_MAIL_FROM', 'Tracht Digital Solutions <noreply@tracht-digital.de>'),
-            adminTo: self::env('TICKET_ADMIN_EMAIL', ''),
+            apiKey: $c->get(AppSettings::class)->get('RESEND_API_KEY'),
+            from: $c->get(AppSettings::class)->get('TICKET_MAIL_FROM'),
+            adminTo: $c->get(AppSettings::class)->get('TICKET_ADMIN_EMAIL'),
             adminAppUrl: self::env('ADMIN_APP_URL', 'https://management.tracht-digital.de'),
             customerAppUrl: self::env('CUSTOMER_APP_URL', 'https://app.tracht-digital.de'),
         ));
@@ -198,6 +216,11 @@ final class Bootstrap
 
         $app->get('/admin/ticket-settings', TicketSettingsGetAction::class)->add($adminJwt);
         $app->put('/admin/ticket-settings', TicketSettingsPutAction::class)->add($adminJwt);
+
+        // Runtime service config (Stripe / ticket mailer / Lexware), edited via
+        // the Einrichtungsassistent + Einstellungen in tds-admin.
+        $app->get('/admin/settings', AppSettingsGetAction::class)->add($adminJwt);
+        $app->put('/admin/settings', AppSettingsPutAction::class)->add($adminJwt);
 
         $app->group('/admin/time-entries', function ($g) {
             $g->get('', AdminTimeEntryListAction::class);

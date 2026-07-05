@@ -25,9 +25,14 @@ final class HealthAction extends BaseAction
      * @param \Closure(): PDO $pdo Lazy provider — resolved inside the try/catch
      *        below so a DB/config failure reports `db: down` with HTTP 200
      *        instead of 5xx'ing during construction (the documented contract).
+     * @param \Closure(): \Tds\CustomerApi\Service\AppSettings $settings Lazy
+     *        provider for the runtime config store (Stripe key lives there now,
+     *        DB-first with .env fallback). Resolved inside try/catch too.
      */
-    public function __construct(private readonly \Closure $pdo)
-    {
+    public function __construct(
+        private readonly \Closure $pdo,
+        private readonly \Closure $settings,
+    ) {
     }
 
     public function __invoke(ServerRequestInterface $request, Response $response): ResponseInterface
@@ -75,7 +80,13 @@ final class HealthAction extends BaseAction
 
     private function checkStripe(): string
     {
-        $key = (string) (getenv('STRIPE_SECRET_KEY') ?: '');
+        // Configured when the DB store OR the .env has a key. Wrapped in
+        // try/catch so a DB outage falls back to the env check and never 5xx's.
+        try {
+            $key = ($this->settings)()->get('STRIPE_SECRET_KEY');
+        } catch (\Throwable) {
+            $key = (string) (getenv('STRIPE_SECRET_KEY') ?: '');
+        }
         return $key === '' ? 'missing' : 'configured';
     }
 

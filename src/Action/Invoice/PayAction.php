@@ -10,6 +10,7 @@ use Slim\Psr7\Response;
 use Stripe\Checkout\Session as StripeSession;
 use Stripe\Stripe;
 use Tds\CustomerApi\Action\BaseAction;
+use Tds\CustomerApi\Service\AppSettings;
 
 /**
  * POST /invoices/{id}/pay
@@ -22,8 +23,10 @@ use Tds\CustomerApi\Action\BaseAction;
  */
 final class PayAction extends BaseAction
 {
-    public function __construct(private readonly PDO $pdo)
-    {
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly AppSettings $settings,
+    ) {
     }
 
     /** @param array<string,string> $args */
@@ -46,8 +49,8 @@ final class PayAction extends BaseAction
             return $this->json($response, 409, ['error' => 'Invoice not payable in current status']);
         }
 
-        Stripe::setApiKey((string) (getenv('STRIPE_SECRET_KEY') ?: ''));
-        $returnUrl = (string) (getenv('STRIPE_RETURN_URL') ?: 'https://app.tracht-digital.de/invoices');
+        Stripe::setApiKey($this->settings->get('STRIPE_SECRET_KEY'));
+        $returnUrl = $this->settings->get('STRIPE_RETURN_URL');
 
         $session = StripeSession::create([
             'mode' => 'payment',

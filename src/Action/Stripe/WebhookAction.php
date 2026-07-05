@@ -9,6 +9,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Response;
 use Stripe\Webhook;
 use Tds\CustomerApi\Action\BaseAction;
+use Tds\CustomerApi\Service\AppSettings;
 
 /**
  * POST /stripe/webhook
@@ -24,13 +25,15 @@ use Tds\CustomerApi\Action\BaseAction;
  */
 final class WebhookAction extends BaseAction
 {
-    public function __construct(private readonly PDO $pdo)
-    {
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly AppSettings $settings,
+    ) {
     }
 
     public function __invoke(ServerRequestInterface $request, Response $response): ResponseInterface
     {
-        $secret = (string) (getenv('STRIPE_WEBHOOK_SECRET') ?: '');
+        $secret = $this->settings->get('STRIPE_WEBHOOK_SECRET');
         if ($secret === '') {
             return $this->json($response, 503, ['error' => 'STRIPE_WEBHOOK_SECRET not configured']);
         }

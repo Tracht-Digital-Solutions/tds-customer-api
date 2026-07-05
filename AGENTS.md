@@ -28,7 +28,7 @@ at root. The build model is dev/release (see README): a push to `main` auto-asse
   the `storage_path` relative to `\$DOCUMENT_ROOT_DIR`.
 - All actions extend `BaseAction` for the json + customerId helpers.
 
-## Schema (13 migrations)
+## Schema (14 migrations)
 
 - `customer(id, email UNIQUE, name, created_at, updated_at)`
 - `project(id, customer_id FK, title, status, start/target dates, description)`
@@ -43,6 +43,7 @@ at root. The build model is dev/release (see README): a push to `main` auto-asse
 - `ticket_comment(id, ticket_id FK, author_type, author_user_id?, body, is_internal, created_at, edited_at)`
 - `ticket_attachment(id, ticket_id FK, comment_id FK?, filename, storage_path, mime_type, size_bytes, uploaded_by_type, created_at)`
 - `ticket_setting(setting_key PK, setting_value, updated_at)` — ticket-system settings (notification toggles). The string PK column is declared `null => false` explicitly: MySQL 8 rejects a nullable PRIMARY KEY (error 1171) where MariaDB silently coerces it — same gotcha handled in tds-auth-api's `session.jti`.
+- `app_setting(setting_key PK, setting_value TEXT, updated_at)` — runtime store for the non-installation-relevant third-party config the admin edits in tds-admin (Stripe, ticket mailer, Lexware). Same generic shape as `ticket_setting` but `setting_value` is `TEXT` to hold base64 AES-256-GCM ciphertext. **No seed rows** — an absent key means "fall back to `.env`". See `AppSettings` below.
 
 Foreign keys cascade-delete from customer; project FK on invoice/
 document/message/ticket uses `ON DELETE SET NULL` so deleting a project
@@ -75,6 +76,41 @@ action required" prompt.
   `ticket_setting` toggles AND no-op entirely when `RESEND_API_KEY` is unset —
   a failed send never breaks the ticket write. New ticket → admin inbox
   (`TICKET_ADMIN_EMAIL`); visible status change / public reply → customer.
+
+## Runtime service config (`AppSettings` + `/admin/settings`)
+
+The non-installation-relevant third-party config — Stripe (`STRIPE_SECRET_KEY`,
+`STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLIC_KEY`, `STRIPE_RETURN_URL`), the ticket
+mailer (`RESEND_API_KEY`, `TICKET_MAIL_FROM`, `TICKET_ADMIN_EMAIL`) and Lexware
+(`LEXWARE_API_KEY`, `LEXWARE_API_URL`, `LEXWARE_DEFAULT_HOURLY_RATE`,
+`LEXWARE_TAX_RATE_PERCENT`) — is edited **at runtime** from tds-admin
+(Einrichtungsassistent / Einstellungen), not baked into `.env` by the installer.
+
+- **`AppSettings` service** (`src/Service/AppSettings.php`) reads/writes the
+  `app_setting` table. `setting_key` == the env var name (1:1). **Precedence:** a
+  non-empty DB value wins, else the env var (safe `?? false` precedence), else the
+  coded default. So existing `.env` deployments keep working and a blank DB row
+  never shadows a configured env var.
+- **Secrets encrypted at rest.** Keys flagged `secret` in the registry
+  (`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`RESEND_API_KEY`/`LEXWARE_API_KEY`)
+  are AES-256-GCM-encrypted under `SETTINGS_ENCRYPTION_KEY`, stored as
+  `gcm:base64(iv|tag|ciphertext)`. Unset key ⇒ plaintext fallback +
+  `encryptionAvailable=false` (dev only). `deriveKey()` sha256's the configured
+  secret to 32 bytes.
+- **`GET /admin/settings`** returns the **masked**, section-grouped state
+  (`configured`/`last4`/`source` for secrets; full `value` for non-secrets) plus
+  `encryptionAvailable` — never a raw secret. **`PUT /admin/settings`** takes a
+  flat `{KEY: value}` map; a **blank secret means "keep existing"** (so the masked
+  UI needn't round-trip the real secret), a blank non-secret clears the override.
+  Both behind `$adminJwt`, next to the ticket-settings routes.
+- **Consumers read DB-first, lazily.** `PayAction`/`WebhookAction` take an
+  `AppSettings` constructor param; `TicketMailer` + the Lexware factories resolve
+  it inside their **lazy** container factories; `HealthAction` gets a
+  `\Closure(): AppSettings` (like its lazy PDO) and its `checkStripe()` reports
+  configured when DB **or** env has the key, in try/catch. Boot stays DB-free —
+  none of these resolve at `createApp()`, so `/healthz` survives a DB outage. The
+  store's own `dbValues()` also swallows a query failure (un-migrated table mid-
+  deploy) and falls back to env-only.
 
 ## Time tracking
 
