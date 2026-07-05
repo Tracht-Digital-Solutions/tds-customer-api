@@ -21,7 +21,11 @@ final class CreateTicketSetting extends AbstractMigration
             'engine' => 'InnoDB',
             'collation' => 'utf8mb4_unicode_ci',
         ])
-            ->addColumn('setting_key', 'string', ['limit' => 60])
+            // Explicit NOT NULL: MySQL 8 rejects a nullable PRIMARY KEY column
+            // (error 1171), whereas MariaDB silently coerces it. A string PK
+            // column isn't emitted NOT NULL on its own, so a fresh install on
+            // MySQL 8 failed here without this.
+            ->addColumn('setting_key', 'string', ['limit' => 60, 'null' => false])
             ->addColumn('setting_value', 'string', ['limit' => 255])
             ->addColumn('updated_at', 'datetime', ['default' => 'CURRENT_TIMESTAMP', 'update' => 'CURRENT_TIMESTAMP'])
             ->create();

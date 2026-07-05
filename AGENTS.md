@@ -42,7 +42,7 @@ at root. The build model is dev/release (see README): a push to `main` auto-asse
 - `ticket(id, customer_id FK, project_id FK?, status_id FK, subject, description, priority, type, assignee_user_id, created_by_type/_user_id, customer_action_required, customer_action_note, created_at, updated_at, closed_at)`
 - `ticket_comment(id, ticket_id FK, author_type, author_user_id?, body, is_internal, created_at, edited_at)`
 - `ticket_attachment(id, ticket_id FK, comment_id FK?, filename, storage_path, mime_type, size_bytes, uploaded_by_type, created_at)`
-- `ticket_setting(setting_key PK, setting_value, updated_at)` — ticket-system settings (notification toggles)
+- `ticket_setting(setting_key PK, setting_value, updated_at)` — ticket-system settings (notification toggles). The string PK column is declared `null => false` explicitly: MySQL 8 rejects a nullable PRIMARY KEY (error 1171) where MariaDB silently coerces it — same gotcha handled in tds-auth-api's `session.jti`.
 
 Foreign keys cascade-delete from customer; project FK on invoice/
 document/message/ticket uses `ON DELETE SET NULL` so deleting a project
