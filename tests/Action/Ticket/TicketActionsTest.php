@@ -40,6 +40,7 @@ final class TicketActionsTest extends DbTestCase
         $this->createTicketStatusTable();
         $this->createTicketTable();
         $this->createTicketCommentTable();
+        $this->createTicketAttachmentTable();
         $this->createTicketSettingTable();
         $this->seedTicketStatuses();
         $this->pdo->exec("INSERT INTO customer (id, email, name) VALUES (7, 'c@example.com', 'Acme GmbH')");

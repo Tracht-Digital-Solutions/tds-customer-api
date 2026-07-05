@@ -173,6 +173,25 @@ abstract class DbTestCase extends TestCase
         SQL);
     }
 
+    protected function createTicketAttachmentTable(): void
+    {
+        $this->drop('ticket_attachment');
+        $this->pdo->exec(<<<'SQL'
+            CREATE TABLE ticket_attachment (
+              id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              ticket_id INT UNSIGNED NOT NULL,
+              comment_id INT UNSIGNED NULL,
+              filename VARCHAR(255) NOT NULL,
+              storage_path VARCHAR(500) NOT NULL,
+              mime_type VARCHAR(150) NOT NULL,
+              size_bytes INT UNSIGNED NOT NULL,
+              uploaded_by_type ENUM('customer','owner') NOT NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+    }
+
     protected function createTicketSettingTable(): void
     {
         $this->drop('ticket_setting');
