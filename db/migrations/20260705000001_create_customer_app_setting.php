@@ -14,8 +14,12 @@ use Phinx\Migration\AbstractMigration;
  * No seed rows on purpose: an absent key means "fall back to the .env value
  * (or the coded default)", so existing .env deployments keep working and a
  * blank row never shadows a configured env var.
+ *
+ * Service-prefixed class name on purpose: the gateway's in-process auto-migrate
+ * loads every service's migrations into ONE PHP process, so migration class
+ * names must be unique across ALL services or the second include fatals.
  */
-final class CreateAppSetting extends AbstractMigration
+final class CreateCustomerAppSetting extends AbstractMigration
 {
     public function up(): void
     {
