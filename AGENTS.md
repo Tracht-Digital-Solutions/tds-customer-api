@@ -260,3 +260,17 @@ See INSTALL.md §6 for the throwaway-Docker test DB recipe.
   the same commit. #13 caught PATCH + DELETE missing for half
   the customer surface; the ticket-settings `PUT` added `PUT` to
   the allowlist the same way.
+- Don't add `CorsMiddleware` before `addRoutingMiddleware()`. Slim
+  middleware is LIFO — the LAST added runs FIRST — so CORS must be added
+  AFTER routing/error to be outermost. Added earlier, the routing
+  middleware 405s every OPTIONS preflight (no OPTIONS routes exist) before
+  CORS can short-circuit it, and browsers block every cross-origin
+  JSON/Authorization/X-Act-As-Customer request from both panels. Bit all
+  four API repos at once via copy-paste; `tests/PreflightTest.php` (an
+  OPTIONS request through the REAL `Bootstrap::createApp()` app) is the
+  regression guard.
+- Don't run `php -S` without `public/router.php` (`composer start` passes
+  it). Without a router script the built-in server 404s any dotted path
+  that has no file on disk — the JWKS fetch from tds-auth-api breaks and
+  every endpoint 401s. Apache (.htaccess) and the gateway's in-process
+  mode don't need it.

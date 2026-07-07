@@ -2,7 +2,7 @@
   "name": "tracht-digital-solutions/tds-customer-api",
   "description": "Customer portal data API (projects, invoices, documents, messages) for TDS",
   "type": "project",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "license": "proprietary",
   "require": {
     "php": ">=8.1",
@@ -37,7 +37,7 @@
     "preferred-install": "dist"
   },
   "scripts": {
-    "start": "php -S localhost:8004 -t public",
+    "start": "php -S localhost:8004 -t public public/router.php",
     "test": "phpunit",
     "migrate": "phinx migrate -e local",
     "migrate:prod": "phinx migrate -e production"
