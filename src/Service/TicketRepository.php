@@ -118,8 +118,8 @@ final class TicketRepository
     {
         $stmt = $this->pdo->prepare(
             'INSERT INTO ticket (customer_id, project_id, status_id, subject, description, priority, type, '
-            . 'created_by_type, created_by_user_id, created_at, updated_at) '
-            . 'VALUES (:cid, :pid, :sid, :subject, :description, :priority, :type, :cbt, :cbu, NOW(), NOW())'
+            . 'created_by_type, created_by_user_id, source, email_message_id, created_at, updated_at) '
+            . 'VALUES (:cid, :pid, :sid, :subject, :description, :priority, :type, :cbt, :cbu, :src, :emid, NOW(), NOW())'
         );
         $stmt->execute([
             'cid' => $data['customer_id'],
@@ -131,6 +131,10 @@ final class TicketRepository
             'type' => $data['type'],
             'cbt' => $data['created_by_type'],
             'cbu' => $data['created_by_user_id'],
+            // source: 'portal' (default) for in-app tickets, 'email' for IMAP-
+            // ingested ones. email_message_id threads/dedupes inbound mail.
+            'src' => $data['source'] ?? 'portal',
+            'emid' => $data['email_message_id'] ?? null,
         ]);
         return (int) $this->pdo->lastInsertId();
     }
@@ -207,8 +211,8 @@ final class TicketRepository
     public function addComment(array $data): int
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO ticket_comment (ticket_id, author_type, author_user_id, body, is_internal, created_at) '
-            . 'VALUES (:tid, :at, :au, :body, :internal, NOW())'
+            'INSERT INTO ticket_comment (ticket_id, author_type, author_user_id, body, is_internal, email_message_id, created_at) '
+            . 'VALUES (:tid, :at, :au, :body, :internal, :emid, NOW())'
         );
         $stmt->execute([
             'tid' => $data['ticket_id'],
@@ -216,8 +220,73 @@ final class TicketRepository
             'au' => $data['author_user_id'],
             'body' => $data['body'],
             'internal' => $data['is_internal'] ? 1 : 0,
+            // Message-ID of the inbound email that produced this comment (IMAP
+            // ingest), else null. Used to dedupe re-polled messages.
+            'emid' => $data['email_message_id'] ?? null,
         ]);
         return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * True when a mail's Message-ID has already been ingested (as a ticket or a
+     * comment). The IMAP poller uses this to skip re-delivered messages even if
+     * marking \Seen failed on a prior pass.
+     */
+    public function emailMessageIdSeen(string $messageId): bool
+    {
+        if ($messageId === '') {
+            return false;
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM ticket WHERE email_message_id = :m '
+            . 'UNION SELECT 1 FROM ticket_comment WHERE email_message_id = :m2 LIMIT 1'
+        );
+        $stmt->execute(['m' => $messageId, 'm2' => $messageId]);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * Find an existing ticket by its originating email Message-ID (matched
+     * against In-Reply-To / References headers) or by numeric id (parsed from a
+     * "#<id>" subject marker), scoped to one customer so a sender can only append
+     * to their own ticket. Returns the ticket id or null.
+     */
+    public function findForEmailReply(?int $ticketId, array $referenceIds, int $customerId): ?int
+    {
+        if ($ticketId !== null) {
+            $stmt = $this->pdo->prepare('SELECT id FROM ticket WHERE id = :id AND customer_id = :cid LIMIT 1');
+            $stmt->execute(['id' => $ticketId, 'cid' => $customerId]);
+            $found = $stmt->fetchColumn();
+            if ($found !== false) {
+                return (int) $found;
+            }
+        }
+        foreach ($referenceIds as $ref) {
+            if ($ref === '') {
+                continue;
+            }
+            $stmt = $this->pdo->prepare(
+                'SELECT t.id FROM ticket t WHERE t.customer_id = :cid AND t.email_message_id = :m '
+                . 'UNION '
+                . 'SELECT c.ticket_id FROM ticket_comment c INNER JOIN ticket t2 ON t2.id = c.ticket_id '
+                . 'WHERE t2.customer_id = :cid2 AND c.email_message_id = :m2 LIMIT 1'
+            );
+            $stmt->execute(['cid' => $customerId, 'm' => $ref, 'cid2' => $customerId, 'm2' => $ref]);
+            $found = $stmt->fetchColumn();
+            if ($found !== false) {
+                return (int) $found;
+            }
+        }
+        return null;
+    }
+
+    /** Resolve a customer id from an email address (customer.email is UNIQUE). */
+    public function customerIdByEmail(string $email): ?int
+    {
+        $stmt = $this->pdo->prepare('SELECT id FROM customer WHERE email = :email LIMIT 1');
+        $stmt->execute(['email' => $email]);
+        $id = $stmt->fetchColumn();
+        return $id === false ? null : (int) $id;
     }
 
     /** @return list<array<string,mixed>> */

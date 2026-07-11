@@ -62,6 +62,46 @@ final class AttachmentStorage
         ];
     }
 
+    /**
+     * Store raw bytes (a decoded email MIME part) and return its metadata, or
+     * null when the part is disallowed/oversize/unwritable — the IMAP ingester
+     * skips it rather than failing the whole message. Mirrors store(): same
+     * {root}/{customer_id}/tickets/{uuid}-{name} layout + name sanitising, but
+     * takes bytes instead of a PSR-7 uploaded file.
+     *
+     * @return array{filename:string,storage_path:string,mime_type:string,size_bytes:int}|null
+     */
+    public function storeBytes(int $customerId, string $filename, string $bytes, string $mime): ?array
+    {
+        $size = strlen($bytes);
+        if (!$this->available() || $size === 0 || $size > self::MAX_BYTES) {
+            return null;
+        }
+        if (!in_array($mime, self::ALLOWED_MIME, true)) {
+            return null;
+        }
+
+        $root = $this->rootDir();
+        $dir = $root . DIRECTORY_SEPARATOR . $customerId . DIRECTORY_SEPARATOR . 'tickets';
+        if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
+            return null;
+        }
+
+        $safeName = preg_replace('/[^a-zA-Z0-9._-]+/', '_', $filename) ?: 'file';
+        $uuid = bin2hex(random_bytes(8));
+        $relPath = $customerId . '/tickets/' . $uuid . '-' . $safeName;
+        if (file_put_contents($root . DIRECTORY_SEPARATOR . $relPath, $bytes) === false) {
+            return null;
+        }
+
+        return [
+            'filename' => $safeName,
+            'storage_path' => $relPath,
+            'mime_type' => $mime,
+            'size_bytes' => $size,
+        ];
+    }
+
     public function absolutePath(string $storagePath): string
     {
         return $this->rootDir() . DIRECTORY_SEPARATOR . $storagePath;

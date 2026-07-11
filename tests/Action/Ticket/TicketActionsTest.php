@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Tds\CustomerApi\Tests\Action\Ticket;
 
-use GuzzleHttp\Client;
 use Slim\Psr7\Response;
 use Tds\CustomerApi\Action\Admin\Ticket\CommentAction as AdminCommentAction;
 use Tds\CustomerApi\Action\Admin\Ticket\GetAction as AdminGetAction;
@@ -15,6 +14,7 @@ use Tds\CustomerApi\Action\Ticket\CommentAction;
 use Tds\CustomerApi\Action\Ticket\CreateAction;
 use Tds\CustomerApi\Action\Ticket\GetAction;
 use Tds\CustomerApi\Action\Ticket\ListAction;
+use Tds\CustomerApi\Service\SmtpMailer;
 use Tds\CustomerApi\Service\TicketMailer;
 use Tds\CustomerApi\Service\TicketRepository;
 use Tds\CustomerApi\Service\TicketSettings;
@@ -48,8 +48,9 @@ final class TicketActionsTest extends DbTestCase
         $this->tickets = new TicketRepository($this->pdo);
         $this->statuses = new TicketStatusRepository($this->pdo);
         $this->settings = new TicketSettings($this->pdo);
-        // Empty apiKey → mailer no-ops, no HTTP calls in tests.
-        $this->mailer = new TicketMailer(new Client(), '', 'from@x', 'admin@x', 'https://m', 'https://a');
+        // Unconfigured SMTP → mailer no-ops, no network calls in tests.
+        $smtp = new SmtpMailer(host: '', port: '', user: '', pass: '', security: 'tls', from: '');
+        $this->mailer = new TicketMailer($smtp, 'admin@x', 'support@x', 'https://m', 'https://a');
     }
 
     private function createTicket(int $customerId = 7): int

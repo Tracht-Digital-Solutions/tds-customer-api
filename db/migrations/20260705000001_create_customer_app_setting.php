@@ -7,7 +7,7 @@ use Phinx\Migration\AbstractMigration;
  * Generic key/value store for non-installation-relevant third-party service
  * configuration the admin edits at runtime (via the Einrichtungsassistent /
  * Einstellungen in tds-admin) instead of the installer writing it into .env:
- * Stripe, the Resend ticket mailer, and Lexware. Same generic shape as
+ * Stripe, the SMTP ticket mailer, the IMAP inbox, and Lexware. Same generic shape as
  * ticket_setting, but setting_value is TEXT so it can hold base64 AES-256-GCM
  * ciphertext for secret keys.
  *

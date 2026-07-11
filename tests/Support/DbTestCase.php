@@ -145,6 +145,8 @@ abstract class DbTestCase extends TestCase
               assignee_user_id INT UNSIGNED NULL,
               created_by_type ENUM('customer','owner') NOT NULL,
               created_by_user_id INT UNSIGNED NULL,
+              source ENUM('portal','email') NOT NULL DEFAULT 'portal',
+              email_message_id VARCHAR(255) NULL,
               customer_action_required TINYINT(1) NOT NULL DEFAULT 0,
               customer_action_note TEXT NULL,
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -166,6 +168,7 @@ abstract class DbTestCase extends TestCase
               author_user_id INT UNSIGNED NULL,
               body TEXT NOT NULL,
               is_internal TINYINT(1) NOT NULL DEFAULT 0,
+              email_message_id VARCHAR(255) NULL,
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               edited_at DATETIME NULL,
               PRIMARY KEY (id)

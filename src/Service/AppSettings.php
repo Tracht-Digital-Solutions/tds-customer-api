@@ -8,9 +8,10 @@ use PDO;
 /**
  * Runtime settings store (the app_setting key/value table) for the
  * non-installation-relevant third-party config the admin edits in tds-admin:
- * Stripe, the Resend ticket mailer, and Lexware. Mirrors the
- * ticket_setting / TicketSettings pattern, generalised for string values with
- * a typed key registry (setting_key == the env var name, 1:1).
+ * Stripe, the SMTP ticket mailer, the IMAP inbox that feeds email→ticket
+ * ingestion, and Lexware. Mirrors the ticket_setting / TicketSettings pattern,
+ * generalised for string values with a typed key registry (setting_key == the
+ * env var name, 1:1).
  *
  * Read precedence: a non-empty DB value wins, else the matching env var, else
  * the coded default. So a fresh install with no DB rows keeps running off .env
@@ -36,9 +37,21 @@ final class AppSettings
         'STRIPE_WEBHOOK_SECRET'       => ['section' => 'stripe',      'secret' => true,  'default' => ''],
         'STRIPE_PUBLIC_KEY'           => ['section' => 'stripe',      'secret' => false, 'default' => ''],
         'STRIPE_RETURN_URL'           => ['section' => 'stripe',      'secret' => false, 'default' => 'https://app.tracht-digital.de/invoices'],
-        'RESEND_API_KEY'              => ['section' => 'ticket_mail', 'secret' => true,  'default' => ''],
-        'TICKET_MAIL_FROM'            => ['section' => 'ticket_mail', 'secret' => false, 'default' => 'Tracht Digital Solutions <noreply@tracht-digital.de>'],
+        'SMTP_HOST'                   => ['section' => 'ticket_mail', 'secret' => false, 'default' => ''],
+        'SMTP_PORT'                   => ['section' => 'ticket_mail', 'secret' => false, 'default' => '587'],
+        'SMTP_USER'                   => ['section' => 'ticket_mail', 'secret' => false, 'default' => ''],
+        'SMTP_PASSWORD'               => ['section' => 'ticket_mail', 'secret' => true,  'default' => ''],
+        'SMTP_SECURITY'               => ['section' => 'ticket_mail', 'secret' => false, 'default' => 'tls'],
+        'SMTP_FROM'                   => ['section' => 'ticket_mail', 'secret' => false, 'default' => 'Tracht Digital Solutions <noreply@tracht-digital.de>'],
         'TICKET_ADMIN_EMAIL'          => ['section' => 'ticket_mail', 'secret' => false, 'default' => ''],
+        'TICKET_INBOX_ADDRESS'        => ['section' => 'ticket_mail', 'secret' => false, 'default' => ''],
+        'IMAP_HOST'                   => ['section' => 'imap',        'secret' => false, 'default' => ''],
+        'IMAP_PORT'                   => ['section' => 'imap',        'secret' => false, 'default' => '993'],
+        'IMAP_USER'                   => ['section' => 'imap',        'secret' => false, 'default' => ''],
+        'IMAP_PASSWORD'               => ['section' => 'imap',        'secret' => true,  'default' => ''],
+        'IMAP_SECURITY'               => ['section' => 'imap',        'secret' => false, 'default' => 'ssl'],
+        'IMAP_FOLDER'                 => ['section' => 'imap',        'secret' => false, 'default' => 'INBOX'],
+        'INGEST_TOKEN'                => ['section' => 'imap',        'secret' => true,  'default' => ''],
         'LEXWARE_API_KEY'             => ['section' => 'lexware',     'secret' => true,  'default' => ''],
         'LEXWARE_API_URL'             => ['section' => 'lexware',     'secret' => false, 'default' => 'https://api.lexware.io/v1'],
         'LEXWARE_DEFAULT_HOURLY_RATE' => ['section' => 'lexware',     'secret' => false, 'default' => '0'],

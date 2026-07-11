@@ -72,19 +72,43 @@ action required" prompt.
 - **Read model** lives in `TicketRepository` (joins the status registry + applies
   per-audience visibility) rather than inline SQL, so every endpoint agrees.
   `TicketStatusRepository` owns the registry, `TicketSettings` the toggles.
-- **Email notifications** (`TicketMailer`, Resend) are opt-in per event via the
-  `ticket_setting` toggles AND no-op entirely when `RESEND_API_KEY` is unset —
-  a failed send never breaks the ticket write. New ticket → admin inbox
-  (`TICKET_ADMIN_EMAIL`); visible status change / public reply → customer.
+- **Email notifications** (`TicketMailer` → `SmtpMailer`, SMTP) are opt-in per
+  event via the `ticket_setting` toggles AND no-op entirely when SMTP is
+  unconfigured (`SMTP_HOST`/`SMTP_FROM` empty) — a failed send never breaks the
+  ticket write. New ticket → admin inbox (`TICKET_ADMIN_EMAIL`); visible status
+  change / public reply → customer. Customer-facing mails carry
+  `Reply-To = TICKET_INBOX_ADDRESS` (the IMAP-monitored inbox) and keep the
+  `#<id>` subject marker so a reply threads back via the ingester (below).
+- **Inbound email → tickets** (`ImapTicketIngest`). One `poll()` pass connects to
+  the configured IMAP mailbox, fetches UNSEEN mail and, per message: resolves the
+  sender via `customer.email` (**unknown senders are skipped/logged**, never
+  ticketed), dedupes on the `Message-ID`, threads onto an existing ticket when a
+  `#<id>` subject marker or an `In-Reply-To`/`References` match belongs to that
+  sender (else opens a `source='email'` ticket), stores allowed attachments
+  (`AttachmentStorage::storeBytes`) and marks the message `\Seen`. Two new columns
+  carry this: `ticket.source` + `ticket.email_message_id` and
+  `ticket_comment.email_message_id` (migration `CustomerAddTicketEmailFields`).
+  webklex/php-imap talks IMAP over stream sockets (no `ext-imap`, no `proc_open`),
+  so it runs in-process. **No worker on prod:** `poll()` is driven by an external
+  scheduler hitting the secret-gated `POST /tickets/ingest` (INGEST_TOKEN) — see
+  `.github/workflows/imap-poll.yml` + the Plesk-scheduled-task alternative — and by
+  the manual `POST /admin/tickets/ingest` ("Jetzt abrufen") button;
+  `GET /admin/tickets/imap-test` backs "Verbindung testen". The message-parsing
+  helpers on `ImapTicketIngest` are pure/static and unit-tested
+  (`ImapTicketIngestParseTest`); `handle()` DB behaviour is in
+  `ImapTicketIngestTest`; a live fetch is a manual check.
 
 ## Runtime service config (`AppSettings` + `/admin/settings`)
 
 The non-installation-relevant third-party config — Stripe (`STRIPE_SECRET_KEY`,
-`STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLIC_KEY`, `STRIPE_RETURN_URL`), the ticket
-mailer (`RESEND_API_KEY`, `TICKET_MAIL_FROM`, `TICKET_ADMIN_EMAIL`) and Lexware
-(`LEXWARE_API_KEY`, `LEXWARE_API_URL`, `LEXWARE_DEFAULT_HOURLY_RATE`,
-`LEXWARE_TAX_RATE_PERCENT`) — is edited **at runtime** from tds-admin
-(Einrichtungsassistent / Einstellungen), not baked into `.env` by the installer.
+`STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLIC_KEY`, `STRIPE_RETURN_URL`), the SMTP ticket
+mailer (`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_SECURITY`/
+`SMTP_FROM`, `TICKET_ADMIN_EMAIL`, `TICKET_INBOX_ADDRESS`), the IMAP inbox
+(`IMAP_HOST`/`IMAP_PORT`/`IMAP_USER`/`IMAP_PASSWORD`/`IMAP_SECURITY`/`IMAP_FOLDER`,
+`INGEST_TOKEN`) and Lexware (`LEXWARE_API_KEY`, `LEXWARE_API_URL`,
+`LEXWARE_DEFAULT_HOURLY_RATE`, `LEXWARE_TAX_RATE_PERCENT`) — is edited **at
+runtime** from tds-admin (Einrichtungsassistent / Einstellungen), not baked into
+`.env` by the installer.
 
 - **`AppSettings` service** (`src/Service/AppSettings.php`) reads/writes the
   `app_setting` table. `setting_key` == the env var name (1:1). **Precedence:** a
@@ -92,7 +116,8 @@ mailer (`RESEND_API_KEY`, `TICKET_MAIL_FROM`, `TICKET_ADMIN_EMAIL`) and Lexware
   coded default. So existing `.env` deployments keep working and a blank DB row
   never shadows a configured env var.
 - **Secrets encrypted at rest.** Keys flagged `secret` in the registry
-  (`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`RESEND_API_KEY`/`LEXWARE_API_KEY`)
+  (`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`SMTP_PASSWORD`/`IMAP_PASSWORD`/
+  `INGEST_TOKEN`/`LEXWARE_API_KEY`)
   are AES-256-GCM-encrypted under `SETTINGS_ENCRYPTION_KEY`, stored as
   `gcm:base64(iv|tag|ciphertext)`. Unset key ⇒ plaintext fallback +
   `encryptionAvailable=false` (dev only). `deriveKey()` sha256's the configured

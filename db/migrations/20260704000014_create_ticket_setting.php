@@ -9,7 +9,7 @@ use Phinx\Migration\AbstractMigration;
  * table (no bespoke columns) so future ticket settings can be added without a
  * migration. Values are stored as strings ('true'/'false'). Seeds the three
  * notification toggles off by default (email is opt-in and also no-ops when
- * RESEND_API_KEY is unset). Uses up()/down() for the seed.
+ * SMTP is unconfigured). Uses up()/down() for the seed.
  */
 final class CreateTicketSetting extends AbstractMigration
 {

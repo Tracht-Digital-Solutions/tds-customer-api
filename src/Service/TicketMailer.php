@@ -3,23 +3,25 @@ declare(strict_types=1);
 
 namespace Tds\CustomerApi\Service;
 
-use GuzzleHttp\Client;
-
 /**
- * Sends ticket notification emails via the Resend HTTP API (same host-friendly
- * approach as tds-contact-api's ResendEmailService). Every send is best-effort:
- * when RESEND_API_KEY is unset the mailer no-ops, and any transport error is
- * swallowed — a failed notification must never break the ticket write that
- * triggered it. Whether a given event notifies at all is decided by the caller
- * via TicketSettings; this class only knows how to render + send.
+ * Sends ticket notification emails over SMTP (via SmtpMailer). Every send is
+ * best-effort: when SMTP is unconfigured the mailer no-ops, and any transport
+ * error is swallowed — a failed notification must never break the ticket write
+ * that triggered it. Whether a given event notifies at all is decided by the
+ * caller via TicketSettings; this class only knows how to render + send.
+ *
+ * Customer-facing mails carry Reply-To = the IMAP-monitored inbox
+ * (TICKET_INBOX_ADDRESS) and keep the "#<id>" subject marker, so a customer's
+ * reply lands in the mailbox the IMAP ingester polls and threads onto the same
+ * ticket. Without the Reply-To the reply would go to the noreply From and never
+ * be seen.
  */
 final class TicketMailer
 {
     public function __construct(
-        private readonly Client $http,
-        private readonly string $apiKey,
-        private readonly string $from,
+        private readonly SmtpMailer $mailer,
         private readonly string $adminTo,
+        private readonly string $inboxAddress,
         private readonly string $adminAppUrl,
         private readonly string $customerAppUrl,
     ) {
@@ -27,7 +29,7 @@ final class TicketMailer
 
     public function isConfigured(): bool
     {
-        return $this->apiKey !== '';
+        return $this->mailer->isConfigured();
     }
 
     /** New ticket → notify the admin/support inbox. */
@@ -63,6 +65,7 @@ final class TicketMailer
                 'Ticket ansehen',
                 rtrim($this->customerAppUrl, "/") . "/tickets/" . $ticketId,
             ),
+            $this->customerReplyTo(),
         );
     }
 
@@ -79,31 +82,26 @@ final class TicketMailer
                 'Antwort ansehen',
                 rtrim($this->customerAppUrl, "/") . "/tickets/" . $ticketId,
             ),
+            $this->customerReplyTo(),
         );
     }
 
-    private function send(string $to, string $subject, string $html): void
+    /**
+     * @param array{replyTo?:string} $opts
+     */
+    private function send(string $to, string $subject, string $html, array $opts = []): void
     {
-        if ($this->apiKey === '' || $to === '') {
-            return;
-        }
         try {
-            $this->http->post('https://api.resend.com/emails', [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $this->apiKey,
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => [
-                    'from' => $this->from,
-                    'to' => [$to],
-                    'subject' => $subject,
-                    'html' => $html,
-                ],
-                'timeout' => 8,
-            ]);
+            $this->mailer->send($to, $subject, $html, $opts);
         } catch (\Throwable) {
             // Best-effort: a failed notification never breaks the ticket write.
         }
+    }
+
+    /** Reply-To for customer-facing mails: the IMAP-monitored inbox, if set. */
+    private function customerReplyTo(): array
+    {
+        return $this->inboxAddress !== '' ? ['replyTo' => $this->inboxAddress] : [];
     }
 
     private function layout(string $heading, string $bodyHtml, string $ctaLabel, string $ctaUrl): string

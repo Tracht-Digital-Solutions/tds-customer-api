@@ -12,8 +12,8 @@ use Tds\CustomerApi\Service\TicketSettings;
 
 /**
  * GET /admin/ticket-settings — the notification toggles, plus whether the mailer
- * is actually configured (so the admin UI can warn that toggles no-op without a
- * RESEND_API_KEY).
+ * is actually configured (so the admin UI can warn that toggles no-op when SMTP
+ * is unconfigured).
  */
 final class GetAction extends BaseAction
 {

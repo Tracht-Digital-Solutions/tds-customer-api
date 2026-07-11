@@ -35,10 +35,13 @@ use Tds\CustomerApi\Action\Ticket\AttachmentUploadAction as TicketAttachmentUplo
 use Tds\CustomerApi\Action\Ticket\CommentAction as TicketCommentAction;
 use Tds\CustomerApi\Action\Ticket\CreateAction as TicketCreateAction;
 use Tds\CustomerApi\Action\Ticket\GetAction as TicketGetAction;
+use Tds\CustomerApi\Action\Ticket\IngestAction as TicketIngestAction;
 use Tds\CustomerApi\Action\Ticket\ListAction as TicketListAction;
 use Tds\CustomerApi\Action\Admin\Ticket\AttachmentDownloadAction as AdminTicketAttachmentDownloadAction;
 use Tds\CustomerApi\Action\Admin\Ticket\CommentAction as AdminTicketCommentAction;
 use Tds\CustomerApi\Action\Admin\Ticket\GetAction as AdminTicketGetAction;
+use Tds\CustomerApi\Action\Admin\Ticket\ImapTestAction as AdminTicketImapTestAction;
+use Tds\CustomerApi\Action\Admin\Ticket\IngestAction as AdminTicketIngestAction;
 use Tds\CustomerApi\Action\Admin\Ticket\ListAction as AdminTicketListAction;
 use Tds\CustomerApi\Action\Admin\Ticket\UpdateAction as AdminTicketUpdateAction;
 use Tds\CustomerApi\Action\Admin\TicketStatus\CreateAction as TicketStatusCreateAction;
@@ -64,11 +67,17 @@ use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
 use Tds\CustomerApi\Middleware\RequirePermissionMiddleware;
 use Tds\CustomerApi\Service\AppSettings;
+use Tds\CustomerApi\Service\AttachmentStorage;
 use Tds\CustomerApi\Service\DocumentSigner;
+use Tds\CustomerApi\Service\ImapTicketIngest;
 use Tds\CustomerApi\Service\JwksClient;
 use Tds\CustomerApi\Service\LexwareClient;
 use Tds\CustomerApi\Service\LexwareInvoiceBuilder;
+use Tds\CustomerApi\Service\SmtpMailer;
 use Tds\CustomerApi\Service\TicketMailer;
+use Tds\CustomerApi\Service\TicketRepository;
+use Tds\CustomerApi\Service\TicketSettings;
+use Tds\CustomerApi\Service\TicketStatusRepository;
 use Tds\CustomerApi\Service\TimeEntryRepository;
 
 final class Bootstrap
@@ -148,18 +157,48 @@ final class Bootstrap
             defaultTaxRate: (float) $c->get(AppSettings::class)->get('LEXWARE_TAX_RATE_PERCENT'),
         ));
 
-        // Ticket notification mailer (Resend). Credentials come from the
-        // AppSettings store (DB-first, .env fallback). Optional — no-ops when
-        // RESEND_API_KEY is unset, and each event is additionally gated by the
+        // SMTP transport for ticket notifications. Credentials come from the
+        // AppSettings store (DB-first, .env fallback). Sends over stream sockets
+        // (no proc_open), so it works in-process under the gateway. Lazy factory.
+        $container->set(SmtpMailer::class, fn (Container $c) => new SmtpMailer(
+            host: $c->get(AppSettings::class)->get('SMTP_HOST'),
+            port: $c->get(AppSettings::class)->get('SMTP_PORT'),
+            user: $c->get(AppSettings::class)->get('SMTP_USER'),
+            pass: $c->get(AppSettings::class)->get('SMTP_PASSWORD'),
+            security: $c->get(AppSettings::class)->get('SMTP_SECURITY'),
+            from: $c->get(AppSettings::class)->get('SMTP_FROM'),
+        ));
+
+        // Ticket notification mailer (SMTP). Optional — no-ops when SMTP is
+        // unconfigured, and each event is additionally gated by the
         // ticket_setting toggles, so the whole feature degrades to in-app only.
-        // Lazy factory → the DB read happens per-request, never at boot.
+        // Customer-facing mails set Reply-To = TICKET_INBOX_ADDRESS (the
+        // IMAP-monitored inbox) so replies thread back via the ingester.
         $container->set(TicketMailer::class, fn (Container $c) => new TicketMailer(
-            http: new GuzzleClient(['timeout' => 8]),
-            apiKey: $c->get(AppSettings::class)->get('RESEND_API_KEY'),
-            from: $c->get(AppSettings::class)->get('TICKET_MAIL_FROM'),
+            mailer: $c->get(SmtpMailer::class),
             adminTo: $c->get(AppSettings::class)->get('TICKET_ADMIN_EMAIL'),
+            inboxAddress: $c->get(AppSettings::class)->get('TICKET_INBOX_ADDRESS'),
             adminAppUrl: self::env('ADMIN_APP_URL', 'https://management.tracht-digital.de'),
             customerAppUrl: self::env('CUSTOMER_APP_URL', 'https://app.tracht-digital.de'),
+        ));
+
+        // Inbound IMAP → ticket ingester. Config (mailbox + folder) from the
+        // AppSettings store; the repos/mailer are autowired concretes. Lazy
+        // factory → the mailbox is only opened when poll()/testConnection() runs,
+        // never at boot. no-ops when IMAP is unconfigured.
+        $container->set(ImapTicketIngest::class, fn (Container $c) => new ImapTicketIngest(
+            pdo: $c->get(PDO::class),
+            tickets: $c->get(TicketRepository::class),
+            statuses: $c->get(TicketStatusRepository::class),
+            attachments: $c->get(AttachmentStorage::class),
+            mailer: $c->get(TicketMailer::class),
+            settings: $c->get(TicketSettings::class),
+            host: $c->get(AppSettings::class)->get('IMAP_HOST'),
+            port: $c->get(AppSettings::class)->get('IMAP_PORT'),
+            user: $c->get(AppSettings::class)->get('IMAP_USER'),
+            pass: $c->get(AppSettings::class)->get('IMAP_PASSWORD'),
+            security: $c->get(AppSettings::class)->get('IMAP_SECURITY'),
+            folder: $c->get(AppSettings::class)->get('IMAP_FOLDER'),
         ));
 
         $container->set(CreateCustomerAction::class, fn (Container $c) => new CreateCustomerAction(
@@ -193,6 +232,10 @@ final class Bootstrap
         // Stripe webhook authenticates via Stripe-Signature header
         // (verified inside the action), so no JWT required.
         $app->post('/stripe/webhook', WebhookAction::class);
+        // IMAP → ticket ingest, driven by an external scheduler (no cron/CLI on
+        // the prod host). Authenticates via the INGEST_TOKEN secret verified
+        // inside the action, so no JWT required.
+        $app->post('/tickets/ingest', TicketIngestAction::class);
         // Signed-URL download authenticates via the URL's HMAC. The
         // signature IS the auth — verified inside the action.
         $app->get('/documents/sign', SignedDownloadAction::class);
@@ -206,6 +249,9 @@ final class Bootstrap
         // Ticket administration (triage board, status registry, notifications).
         $app->group('/admin/tickets', function ($g) {
             $g->get('', AdminTicketListAction::class);
+            // Literal segments before the {id} routes — non-numeric, so no clash.
+            $g->post('/ingest', AdminTicketIngestAction::class);
+            $g->get('/imap-test', AdminTicketImapTestAction::class);
             $g->get('/{id:[0-9]+}', AdminTicketGetAction::class);
             $g->patch('/{id:[0-9]+}', AdminTicketUpdateAction::class);
             $g->post('/{id:[0-9]+}/comments', AdminTicketCommentAction::class);

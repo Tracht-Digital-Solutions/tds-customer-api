@@ -1,0 +1,42 @@
+# Scheduled IMAP → ticket ingest.
+#
+# The prod host has no cron/CLI and disables proc_open, and the API runs
+# in-process under the gateway — so IMAP polling can't be a long-running worker.
+# Instead this workflow pings the secret-protected ingest endpoint on a schedule;
+# each call does one poll pass (connect, fetch UNSEEN, create/append tickets,
+# mark \Seen). See src/Service/ImapTicketIngest.php.
+#
+# GitHub's scheduled runs are best-effort and can be delayed under load; a Plesk
+# Scheduled Task fetching the same URL is the production-preferred trigger (and
+# can run more frequently). Either way the endpoint is idempotent.
+#
+# Required repository secrets:
+#   INGEST_URL    e.g. https://api.tracht-digital.de/customer/tickets/ingest
+#   INGEST_TOKEN  must match the customer-api INGEST_TOKEN app_setting
+name: IMAP poll
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub's minimum granularity).
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # manual "run now"
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger one ingest pass
+        env:
+          INGEST_URL: ${{ secrets.INGEST_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+        run: |
+          if [ -z "$INGEST_URL" ] || [ -z "$INGEST_TOKEN" ]; then
+            echo "INGEST_URL / INGEST_TOKEN secret not set — skipping."
+            exit 0
+          fi
+          curl -fsS -X POST \
+            -H "X-Ingest-Token: $INGEST_TOKEN" \
+            "$INGEST_URL" && echo "" || {
+              echo "Ingest call failed."
+              exit 1
+            }
