@@ -18,7 +18,7 @@ jobs:
   check:
     uses: ./.github/workflows/_pipeline.yml
     with:
-      php_extensions: openssl, fileinfo, pdo_mysql
+      php_extensions: openssl, fileinfo, pdo_mysql, zip, mbstring
       db_name: tds_customer_test
       run_db_tests: true
     secrets: inherit

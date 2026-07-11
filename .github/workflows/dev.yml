@@ -22,7 +22,7 @@ jobs:
   bundle:
     uses: ./.github/workflows/_pipeline.yml
     with:
-      php_extensions: openssl, fileinfo, pdo_mysql
+      php_extensions: openssl, fileinfo, pdo_mysql, zip, mbstring
       db_name: tds_customer_test
       publish_branch: dev
     secrets: inherit
