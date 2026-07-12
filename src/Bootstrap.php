@@ -33,6 +33,7 @@ use Tds\CustomerApi\Action\Stripe\WebhookAction;
 use Tds\CustomerApi\Action\Ticket\AttachmentDownloadAction as TicketAttachmentDownloadAction;
 use Tds\CustomerApi\Action\Ticket\AttachmentUploadAction as TicketAttachmentUploadAction;
 use Tds\CustomerApi\Action\Ticket\CommentAction as TicketCommentAction;
+use Tds\CustomerApi\Action\Ticket\ContactIngestAction as TicketContactIngestAction;
 use Tds\CustomerApi\Action\Ticket\CreateAction as TicketCreateAction;
 use Tds\CustomerApi\Action\Ticket\GetAction as TicketGetAction;
 use Tds\CustomerApi\Action\Ticket\IngestAction as TicketIngestAction;
@@ -236,6 +237,9 @@ final class Bootstrap
         // the prod host). Authenticates via the INGEST_TOKEN secret verified
         // inside the action, so no JWT required.
         $app->post('/tickets/ingest', TicketIngestAction::class);
+        // Contact-form → ticket ingest, called server-to-server by
+        // tds-contact-api on each submission. Same INGEST_TOKEN secret auth.
+        $app->post('/tickets/contact', TicketContactIngestAction::class);
         // Signed-URL download authenticates via the URL's HMAC. The
         // signature IS the auth — verified inside the action.
         $app->get('/documents/sign', SignedDownloadAction::class);

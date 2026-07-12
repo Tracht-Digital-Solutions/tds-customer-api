@@ -133,10 +133,6 @@ final class ImapTicketIngest
         }
 
         $customerId = $this->tickets->customerIdByEmail($from);
-        if ($customerId === null) {
-            error_log('[ingest] skip: unknown sender ' . $from);
-            return 'skipped';
-        }
 
         $messageId = $mail['message_id'];
         if ($messageId !== '' && $this->tickets->emailMessageIdSeen($messageId)) {
@@ -145,9 +141,14 @@ final class ImapTicketIngest
 
         $body = $mail['body'] !== '' ? $mail['body'] : '(Kein Textinhalt in der E-Mail.)';
 
-        // Reply onto an existing ticket the sender owns?
+        // Reply onto an existing ticket the sender owns? A known customer can
+        // append to any of their tickets; an unknown sender only to their own
+        // contact-form ticket (matched by from_email) — that lets a contact
+        // reply thread back even though they have no customer account.
         $ticketId = self::parseTicketIdFromSubject($mail['subject']);
-        $existing = $this->tickets->findForEmailReply($ticketId, $mail['references'], $customerId);
+        $existing = $customerId !== null
+            ? $this->tickets->findForEmailReply($ticketId, $mail['references'], $customerId)
+            : $this->tickets->findContactTicketForReply($ticketId, $mail['references'], $from);
         if ($existing !== null) {
             $commentId = $this->tickets->addComment([
                 'ticket_id' => $existing,
@@ -158,8 +159,17 @@ final class ImapTicketIngest
                 'email_message_id' => $messageId,
             ]);
             $this->tickets->clearCustomerAction($existing);
-            $this->storeAttachments($customerId, $existing, $commentId, $mail['attachments']);
+            // Attachments are bucketed by customer id on disk; a null-customer
+            // contact ticket uses the shared 0 bucket.
+            $this->storeAttachments($customerId ?? 0, $existing, $commentId, $mail['attachments']);
             return 'appended';
+        }
+
+        // A brand-new mail from an unknown sender is never turned into a ticket
+        // (anti-spam) — only replies to an existing contact ticket thread above.
+        if ($customerId === null) {
+            error_log('[ingest] skip: unknown sender ' . $from);
+            return 'skipped';
         }
 
         // Otherwise open a new email-sourced ticket.

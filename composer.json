@@ -2,7 +2,7 @@
   "name": "tracht-digital-solutions/tds-customer-api",
   "description": "Customer portal data API (projects, invoices, documents, messages) for TDS",
   "type": "project",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "proprietary",
   "require": {
     "php": ">=8.2",

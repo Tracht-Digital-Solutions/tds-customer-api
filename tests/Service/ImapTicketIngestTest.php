@@ -115,6 +115,43 @@ final class ImapTicketIngestTest extends DbTestCase
         self::assertSame('0', (string) $this->pdo->query("SELECT customer_action_required FROM ticket WHERE id = {$ticketId}")->fetchColumn());
     }
 
+    public function test_contact_sender_reply_threads_onto_contact_ticket(): void
+    {
+        // A contact-form ticket from a non-customer (customer_id NULL).
+        $tickets = new TicketRepository($this->pdo);
+        $ticketId = $tickets->create([
+            'customer_id' => null,
+            'project_id' => null,
+            'status_id' => 1,
+            'subject' => 'Kontaktanfrage von Max Mustermann',
+            'description' => 'Erstanfrage über das Kontaktformular.',
+            'priority' => 'normal',
+            'type' => 'contact',
+            'created_by_type' => 'customer',
+            'created_by_user_id' => null,
+            'source' => 'contact',
+            'email_message_id' => null,
+            'from_name' => 'Max Mustermann',
+            'from_email' => 'max@example.org',
+            'from_company' => null,
+        ]);
+
+        // The submitter (unknown to `customer`) replies to the notification mail,
+        // whose subject carries the "#<id>" marker → threads onto the ticket.
+        $outcome = $this->ingest->handle($this->mail([
+            'from' => 'max@example.org',
+            'message_id' => 'contact-reply@x',
+            'subject' => "Re: Ticket #{$ticketId}: Kontaktanfrage",
+            'body' => 'Danke für die schnelle Rückmeldung!',
+        ]));
+
+        self::assertSame('appended', $outcome);
+        self::assertSame('1', (string) $this->pdo->query('SELECT COUNT(*) FROM ticket')->fetchColumn());
+        $comment = $this->pdo->query("SELECT author_type, body FROM ticket_comment WHERE ticket_id = {$ticketId}")->fetch();
+        self::assertSame('customer', $comment['author_type']);
+        self::assertSame('Danke für die schnelle Rückmeldung!', $comment['body']);
+    }
+
     public function test_reply_marker_for_another_customers_ticket_opens_new(): void
     {
         // Customer 7 opens a ticket.

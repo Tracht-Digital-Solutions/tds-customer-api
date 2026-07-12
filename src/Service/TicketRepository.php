@@ -15,7 +15,8 @@ final class TicketRepository
 {
     private const SELECT =
         'SELECT t.id, t.customer_id, t.project_id, t.subject, t.description, t.priority, t.type, '
-        . 't.assignee_user_id, t.created_by_type, t.created_by_user_id, '
+        . 't.assignee_user_id, t.created_by_type, t.created_by_user_id, t.source, '
+        . 't.from_name, t.from_email, t.from_company, '
         . 't.customer_action_required, t.customer_action_note, t.created_at, t.updated_at, t.closed_at, '
         . 's.id AS status_id, s.name AS status_name, s.color AS status_color, '
         . 's.visible_to_customer AS status_visible, s.is_terminal AS status_terminal '
@@ -62,6 +63,10 @@ final class TicketRepository
             $where[] = 't.priority = :priority';
             $params['priority'] = $filters['priority'];
         }
+        if (isset($filters['type'])) {
+            $where[] = 't.type = :type';
+            $params['type'] = $filters['type'];
+        }
         if (isset($filters['customer_id'])) {
             $where[] = 't.customer_id = :customer_id';
             $params['customer_id'] = $filters['customer_id'];
@@ -71,15 +76,19 @@ final class TicketRepository
             $params['q'] = '%' . $filters['q'] . '%';
         }
 
+        // LEFT JOIN (not INNER): contact-form tickets have customer_id = NULL, so
+        // an INNER JOIN would silently drop them. Display name/email fall back to
+        // the stored from_* submitter details for those.
         $sql = 'SELECT t.id, t.customer_id, t.project_id, t.subject, t.description, t.priority, t.type, '
-            . 't.assignee_user_id, t.created_by_type, t.created_by_user_id, '
+            . 't.assignee_user_id, t.created_by_type, t.created_by_user_id, t.source, '
+            . 't.from_name, t.from_email, t.from_company, '
             . 't.customer_action_required, t.customer_action_note, t.created_at, t.updated_at, t.closed_at, '
             . 's.id AS status_id, s.name AS status_name, s.color AS status_color, '
             . 's.visible_to_customer AS status_visible, s.is_terminal AS status_terminal, '
             . 'c.name AS customer_name, c.email AS customer_email '
             . 'FROM ticket t '
             . 'INNER JOIN ticket_status s ON s.id = t.status_id '
-            . 'INNER JOIN customer c ON c.id = t.customer_id';
+            . 'LEFT JOIN customer c ON c.id = t.customer_id';
         if ($where !== []) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
@@ -89,8 +98,8 @@ final class TicketRepository
         $stmt->execute($params);
         return array_map(function (array $r): array {
             $ticket = $this->present($r, forCustomer: false);
-            $ticket['customerName'] = (string) $r['customer_name'];
-            $ticket['customerEmail'] = (string) $r['customer_email'];
+            $ticket['customerName'] = (string) ($r['customer_name'] ?? $r['from_name'] ?? '');
+            $ticket['customerEmail'] = (string) ($r['customer_email'] ?? $r['from_email'] ?? '');
             return $ticket;
         }, $stmt->fetchAll());
     }
@@ -118,8 +127,10 @@ final class TicketRepository
     {
         $stmt = $this->pdo->prepare(
             'INSERT INTO ticket (customer_id, project_id, status_id, subject, description, priority, type, '
-            . 'created_by_type, created_by_user_id, source, email_message_id, created_at, updated_at) '
-            . 'VALUES (:cid, :pid, :sid, :subject, :description, :priority, :type, :cbt, :cbu, :src, :emid, NOW(), NOW())'
+            . 'created_by_type, created_by_user_id, source, email_message_id, '
+            . 'from_name, from_email, from_company, created_at, updated_at) '
+            . 'VALUES (:cid, :pid, :sid, :subject, :description, :priority, :type, :cbt, :cbu, :src, :emid, '
+            . ':fname, :femail, :fcompany, NOW(), NOW())'
         );
         $stmt->execute([
             'cid' => $data['customer_id'],
@@ -132,9 +143,15 @@ final class TicketRepository
             'cbt' => $data['created_by_type'],
             'cbu' => $data['created_by_user_id'],
             // source: 'portal' (default) for in-app tickets, 'email' for IMAP-
-            // ingested ones. email_message_id threads/dedupes inbound mail.
+            // ingested ones, 'contact' for contact-form submissions.
+            // email_message_id threads/dedupes inbound mail.
             'src' => $data['source'] ?? 'portal',
             'emid' => $data['email_message_id'] ?? null,
+            // from_*: submitter contact details for a non-customer ticket
+            // (contact form); NULL for customer/portal tickets.
+            'fname' => $data['from_name'] ?? null,
+            'femail' => $data['from_email'] ?? null,
+            'fcompany' => $data['from_company'] ?? null,
         ]);
         return (int) $this->pdo->lastInsertId();
     }
@@ -362,15 +379,21 @@ final class TicketRepository
 
         return [
             'id' => (int) $r['id'],
-            'customerId' => (int) $r['customer_id'],
+            // NULL for contact-form tickets that don't belong to a customer.
+            'customerId' => $r['customer_id'] !== null ? (int) $r['customer_id'] : null,
             'projectId' => $r['project_id'] !== null ? (int) $r['project_id'] : null,
             'subject' => (string) $r['subject'],
             'description' => (string) $r['description'],
             'priority' => (string) $r['priority'],
             'type' => (string) $r['type'],
+            'source' => isset($r['source']) ? (string) $r['source'] : 'portal',
             'assigneeUserId' => $r['assignee_user_id'] !== null ? (int) $r['assignee_user_id'] : null,
             'createdByType' => (string) $r['created_by_type'],
             'createdByUserId' => $r['created_by_user_id'] !== null ? (int) $r['created_by_user_id'] : null,
+            // Structured submitter contact details (contact-form tickets).
+            'fromName' => isset($r['from_name']) && $r['from_name'] !== null ? (string) $r['from_name'] : null,
+            'fromEmail' => isset($r['from_email']) && $r['from_email'] !== null ? (string) $r['from_email'] : null,
+            'fromCompany' => isset($r['from_company']) && $r['from_company'] !== null ? (string) $r['from_company'] : null,
             'customerActionRequired' => (bool) $r['customer_action_required'],
             'customerActionNote' => $r['customer_action_note'] !== null ? (string) $r['customer_action_note'] : null,
             'statusId' => (int) $r['status_id'],
@@ -379,5 +402,68 @@ final class TicketRepository
             'updatedAt' => (string) $r['updated_at'],
             'closedAt' => $r['closed_at'] !== null ? (string) $r['closed_at'] : null,
         ];
+    }
+
+    /**
+     * The address to notify for a ticket: the owning customer's email, or — for a
+     * contact-form ticket with no customer — the stored submitter email. Returns
+     * null when neither is available. Centralised here so the admin reply/status
+     * actions notify contact submitters as well as customers.
+     *
+     * @param array<string,mixed> $row a raw joined ticket row (from findRow)
+     */
+    public function notifyEmail(array $row): ?string
+    {
+        if ($row['customer_id'] !== null) {
+            $stmt = $this->pdo->prepare('SELECT email FROM customer WHERE id = :id LIMIT 1');
+            $stmt->execute(['id' => (int) $row['customer_id']]);
+            $email = $stmt->fetchColumn();
+            return $email === false ? null : (string) $email;
+        }
+        $from = $row['from_email'] ?? null;
+        return $from !== null && $from !== '' ? (string) $from : null;
+    }
+
+    /**
+     * Find a contact-form ticket (source='contact') a non-customer email reply
+     * belongs to — the from_email counterpart of findForEmailReply(). Matches a
+     * "#<id>" subject marker or an In-Reply-To/References Message-ID, scoped to
+     * the sender's own from_email so a stranger can't append to someone else's
+     * contact ticket. Returns the ticket id or null.
+     *
+     * @param list<string> $referenceIds
+     */
+    public function findContactTicketForReply(?int $ticketId, array $referenceIds, string $fromEmail): ?int
+    {
+        if ($fromEmail === '') {
+            return null;
+        }
+        if ($ticketId !== null) {
+            $stmt = $this->pdo->prepare(
+                "SELECT id FROM ticket WHERE id = :id AND source = 'contact' AND from_email = :email LIMIT 1"
+            );
+            $stmt->execute(['id' => $ticketId, 'email' => $fromEmail]);
+            $found = $stmt->fetchColumn();
+            if ($found !== false) {
+                return (int) $found;
+            }
+        }
+        foreach ($referenceIds as $ref) {
+            if ($ref === '') {
+                continue;
+            }
+            $stmt = $this->pdo->prepare(
+                "SELECT t.id FROM ticket t WHERE t.source = 'contact' AND t.from_email = :email AND t.email_message_id = :m "
+                . 'UNION '
+                . 'SELECT c.ticket_id FROM ticket_comment c INNER JOIN ticket t2 ON t2.id = c.ticket_id '
+                . "WHERE t2.source = 'contact' AND t2.from_email = :email2 AND c.email_message_id = :m2 LIMIT 1"
+            );
+            $stmt->execute(['email' => $fromEmail, 'm' => $ref, 'email2' => $fromEmail, 'm2' => $ref]);
+            $found = $stmt->fetchColumn();
+            if ($found !== false) {
+                return (int) $found;
+            }
+        }
+        return null;
     }
 }

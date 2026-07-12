@@ -12,8 +12,10 @@ use Tds\CustomerApi\Service\TicketRepository;
 
 /**
  * GET /admin/tickets — all tickets with the real (unmasked) status + customer
- * display info. Optional filters: statusId, assigneeUserId, priority, customerId,
- * q (subject/description search). Not customer-scoped (admin JWT gate).
+ * display info. Optional filters: statusId, assigneeUserId, priority, type,
+ * customerId, q (subject/description search). Not customer-scoped (admin JWT
+ * gate). The `type` filter separates contact tickets (type='contact') from
+ * support tickets in the admin UI.
  */
 final class ListAction extends BaseAction
 {
@@ -34,6 +36,9 @@ final class ListAction extends BaseAction
         }
         if (isset($q['priority']) && Ticket::isValidPriority((string) $q['priority'])) {
             $filters['priority'] = (string) $q['priority'];
+        }
+        if (isset($q['type']) && Ticket::isValidType((string) $q['type'])) {
+            $filters['type'] = (string) $q['type'];
         }
         if (isset($q['customerId']) && ctype_digit((string) $q['customerId'])) {
             $filters['customer_id'] = (int) $q['customerId'];

@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Tds\CustomerApi\Action\Admin\Ticket;
 
-use PDO;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Response;
@@ -24,7 +23,6 @@ final class CommentAction extends BaseAction
         private readonly TicketRepository $tickets,
         private readonly TicketSettings $settings,
         private readonly TicketMailer $mailer,
-        private readonly PDO $pdo,
     ) {
     }
 
@@ -60,21 +58,15 @@ final class CommentAction extends BaseAction
         $this->tickets->touch($id);
 
         // Notify the customer only for a public reply (never for internal notes).
+        // notifyEmail() resolves the customer's address, or the submitter's for a
+        // contact-form ticket with no customer.
         if (!$isInternal && $this->settings->enabled('notify_customer_on_reply')) {
-            $email = $this->customerEmail((int) $row['customer_id']);
+            $email = $this->tickets->notifyEmail($row);
             if ($email !== null) {
                 $this->mailer->notifyCustomerReply($email, $id, (string) $row['subject']);
             }
         }
 
         return $this->json($response, 201, ['id' => $commentId]);
-    }
-
-    private function customerEmail(int $customerId): ?string
-    {
-        $stmt = $this->pdo->prepare('SELECT email FROM customer WHERE id = :id LIMIT 1');
-        $stmt->execute(['id' => $customerId]);
-        $email = $stmt->fetchColumn();
-        return $email === false ? null : (string) $email;
     }
 }

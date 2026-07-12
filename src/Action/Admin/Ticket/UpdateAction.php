@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Tds\CustomerApi\Action\Admin\Ticket;
 
-use PDO;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Response;
@@ -30,7 +29,6 @@ final class UpdateAction extends BaseAction
         private readonly TicketStatusRepository $statuses,
         private readonly TicketSettings $settings,
         private readonly TicketMailer $mailer,
-        private readonly PDO $pdo,
     ) {
     }
 
@@ -126,7 +124,7 @@ final class UpdateAction extends BaseAction
             && $newStatus['visibleToCustomer']
             && $this->settings->enabled('notify_customer_on_status')
         ) {
-            $email = $this->customerEmail((int) $row['customer_id']);
+            $email = $this->tickets->notifyEmail($row);
             if ($email !== null) {
                 $this->mailer->notifyCustomerStatusChange($email, $id, (string) $row['subject'], (string) $newStatus['name']);
             }
@@ -134,13 +132,5 @@ final class UpdateAction extends BaseAction
 
         $updated = $this->tickets->findRow($id);
         return $this->json($response, 200, ['ticket' => $this->tickets->present($updated ?? $row, forCustomer: false)]);
-    }
-
-    private function customerEmail(int $customerId): ?string
-    {
-        $stmt = $this->pdo->prepare('SELECT email FROM customer WHERE id = :id LIMIT 1');
-        $stmt->execute(['id' => $customerId]);
-        $email = $stmt->fetchColumn();
-        return $email === false ? null : (string) $email;
     }
 }

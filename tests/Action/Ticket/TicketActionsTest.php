@@ -135,7 +135,7 @@ final class TicketActionsTest extends DbTestCase
         $id = $this->createTicket();
 
         // Admin adds a public reply + an internal note.
-        $adminComment = new AdminCommentAction($this->tickets, $this->settings, $this->mailer, $this->pdo);
+        $adminComment = new AdminCommentAction($this->tickets, $this->settings, $this->mailer);
         $adminComment(
             $this->request('POST', "/admin/tickets/{$id}/comments", 0, admin: true, body: ['body' => 'Wir schauen es an'], uid: 1),
             new Response(),
@@ -168,7 +168,7 @@ final class TicketActionsTest extends DbTestCase
     {
         $id = $this->createTicket();
 
-        $update = new AdminUpdateAction($this->tickets, $this->statuses, $this->settings, $this->mailer, $this->pdo);
+        $update = new AdminUpdateAction($this->tickets, $this->statuses, $this->settings, $this->mailer);
         $res = $update(
             $this->request('PATCH', "/admin/tickets/{$id}", 0, admin: true, body: ['statusId' => 3]),
             new Response(),
@@ -182,7 +182,7 @@ final class TicketActionsTest extends DbTestCase
     {
         $id = $this->createTicket();
 
-        $update = new AdminUpdateAction($this->tickets, $this->statuses, $this->settings, $this->mailer, $this->pdo);
+        $update = new AdminUpdateAction($this->tickets, $this->statuses, $this->settings, $this->mailer);
         $update(
             $this->request('PATCH', "/admin/tickets/{$id}", 0, admin: true, body: ['assigneeUserId' => 42]),
             new Response(),

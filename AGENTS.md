@@ -97,6 +97,25 @@ action required" prompt.
   helpers on `ImapTicketIngest` are pure/static and unit-tested
   (`ImapTicketIngestParseTest`); `handle()` DB behaviour is in
   `ImapTicketIngestTest`; a live fetch is a manual check.
+- **Contact-form → tickets** (`POST /tickets/contact`, `ContactIngestAction`).
+  tds-contact-api forwards each contact-form submission here (server-to-server,
+  same `INGEST_TOKEN` secret auth as `/tickets/ingest`, no JWT). It opens a ticket
+  categorised `type='contact'`, `source='contact'`, carrying the submitter's
+  contact details **structurally** in `from_name`/`from_email`/`from_company`
+  (migration `CustomerAddTicketContactFields`). The submitter is usually not a
+  customer, so **`customer_id` is nullable** — a contact ticket with no customer
+  belongs to nobody and is therefore admin-only (the customer portal lists strictly
+  by `customer_id`). When the submitter's email matches a `customer.email`, the
+  ticket is bound to that customer instead (mirroring the IMAP path). The admin
+  list `LEFT JOIN`s customer and falls back to `from_*` for the display name; a
+  `type` filter separates contact tickets from support tickets. `notifyEmail()`
+  (on `TicketRepository`) resolves the reply/status recipient as the customer email
+  **or** the submitter's `from_email`, so admin replies reach contact submitters.
+  A contact submitter's own email reply threads back onto their ticket via
+  `findContactTicketForReply()` (matched on `from_email` + the `#<id>` marker) even
+  though they have no customer account — brand-new mail from an unknown sender is
+  still dropped (anti-spam). Coverage: `ContactIngestActionTest` +
+  `ImapTicketIngestTest::test_contact_sender_reply_threads_onto_contact_ticket`.
 
 ## Runtime service config (`AppSettings` + `/admin/settings`)
 

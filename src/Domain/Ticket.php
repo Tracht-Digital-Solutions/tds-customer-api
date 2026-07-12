@@ -12,7 +12,9 @@ namespace Tds\CustomerApi\Domain;
 final class Ticket
 {
     public const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
-    public const TYPES = ['question', 'bug', 'feature', 'other'];
+    // 'contact' categorises contact-form tickets (source='contact') apart from
+    // the support types; it is set by ContactIngestAction, never the default.
+    public const TYPES = ['question', 'bug', 'feature', 'other', 'contact'];
 
     public const DEFAULT_PRIORITY = 'normal';
     public const DEFAULT_TYPE = 'question';

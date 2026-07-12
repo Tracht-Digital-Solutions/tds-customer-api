@@ -135,23 +135,26 @@ abstract class DbTestCase extends TestCase
         $this->pdo->exec(<<<'SQL'
             CREATE TABLE ticket (
               id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-              customer_id INT UNSIGNED NOT NULL,
+              customer_id INT UNSIGNED NULL,
               project_id INT UNSIGNED NULL,
               status_id INT UNSIGNED NOT NULL,
               subject VARCHAR(200) NOT NULL,
               description TEXT NOT NULL,
               priority ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
-              type ENUM('question','bug','feature','other') NOT NULL DEFAULT 'question',
+              type ENUM('question','bug','feature','other','contact') NOT NULL DEFAULT 'question',
               assignee_user_id INT UNSIGNED NULL,
               created_by_type ENUM('customer','owner') NOT NULL,
               created_by_user_id INT UNSIGNED NULL,
-              source ENUM('portal','email') NOT NULL DEFAULT 'portal',
+              source ENUM('portal','email','contact') NOT NULL DEFAULT 'portal',
               email_message_id VARCHAR(255) NULL,
               customer_action_required TINYINT(1) NOT NULL DEFAULT 0,
               customer_action_note TEXT NULL,
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               closed_at DATETIME NULL,
+              from_name VARCHAR(200) NULL,
+              from_email VARCHAR(254) NULL,
+              from_company VARCHAR(200) NULL,
               PRIMARY KEY (id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         SQL);
