@@ -4,6 +4,15 @@ PHP 8.3 + Slim 4 + PDO + Phinx + Stripe + JWKS verification. Owns
 the `tds_customer` MariaDB database and customer document storage
 on the production host's filesystem under `\$DOCUMENT_ROOT_DIR/{customer_id}/`.
 
+> Status: **PARTIALLY SUPERSEDED — still live, do NOT retire yet.** Ported to panel
+> extensions: support tickets → `tds-ext-support-tickets`, time tracking →
+> `tds-ext-time-tracker`, Lexware → `tds-ext-lexware`, the customer directory →
+> `tds-ext-customers`, Stripe invoices → `tds-ext-billing`. **Not yet ported:**
+> projects/milestones, documents, messages. The panel's user-management still queries
+> this service's `/customer/admin/customers` live until `tds-ext-customers` is published.
+> This service remains the live backend until backend cutover. See the root
+> `MIGRATION-STATUS.md`.
+
 ## Behind the gateway
 
 The public surface `api.tracht-digital.de/customer/*` is fronted by
