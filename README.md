@@ -82,7 +82,7 @@ POST-pings the deploy webhook and the production host pulls the new
 release and activates it.
 
 **Migrations on production apply automatically.** This service is served
-in-process by the `tds-api-gateway` bundle, which runs each service's pending
+in-process by the `tds-gateway-api` bundle, which runs each service's pending
 Phinx migrations on the first request after a deploy — in-process via Phinx's
 `Manager` API, no `proc_open`, no CLI php (see the gateway's `AGENTS.md` →
 *Auto-migration*). So new migrations (e.g. `create_time_entry`,

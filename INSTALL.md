@@ -195,7 +195,7 @@ API's test suite — just don't run two of them in parallel against it
 
 ## 7. Production deployment
 
-In production this API ships inside the **`tds-api-gateway` bundle** as
+In production this API ships inside the **`tds-gateway-api` bundle** as
 `services/customer/` and is served by the gateway in its default **in-process**
 mode (`GATEWAY_MODE=inprocess`): one PHP-FPM app for the whole API surface, **no
 per-service `php -S` process to start**. The full release recipe (Plesk Git
@@ -225,9 +225,9 @@ In production:
 
 ## Related repos
 
-- [tds-shared](https://github.com/Tracht-Digital-Solutions/tds-shared) — types for `Project`, `Invoice`, `Document`, `Message`, etc.
+- [tds-shared-pkg](https://github.com/Tracht-Digital-Solutions/tds-shared-pkg) — types for `Project`, `Invoice`, `Document`, `Message`, etc.
 - [tds-auth-api](https://github.com/Tracht-Digital-Solutions/tds-auth-api) — JWKS source; `POST /admin/customer-credentials` is called from here during onboarding
-- [tds-customer](https://github.com/Tracht-Digital-Solutions/tds-customer) — customer portal frontend; consumes every customer-scoped endpoint
+- [tds-customer-legacy-frontend](https://github.com/Tracht-Digital-Solutions/tds-customer-legacy-frontend) — customer portal frontend; consumes every customer-scoped endpoint
 - [tds-admin](https://github.com/Tracht-Digital-Solutions/tds-admin) — `/time` page consumes `/admin/time-entries/*` + `/admin/projects`
 
 ## Troubleshooting

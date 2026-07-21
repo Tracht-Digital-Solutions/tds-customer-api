@@ -5,18 +5,18 @@ the `tds_customer` MariaDB database and customer document storage
 on the production host's filesystem under `\$DOCUMENT_ROOT_DIR/{customer_id}/`.
 
 > Status: **PARTIALLY SUPERSEDED — still live, do NOT retire yet.** Ported to panel
-> extensions: support tickets → `tds-ext-support-tickets`, time tracking →
-> `tds-ext-time-tracker`, Lexware → `tds-ext-lexware`, the customer directory →
-> `tds-ext-customers`, Stripe invoices → `tds-ext-billing`. **Not yet ported:**
+> extensions: support tickets → `tds-ext-support-tickets-pkg`, time tracking →
+> `tds-ext-time-tracker-pkg`, Lexware → `tds-ext-lexware-pkg`, the customer directory →
+> `tds-ext-customers-pkg`, Stripe invoices → `tds-ext-billing-pkg`. **Not yet ported:**
 > projects/milestones, documents, messages. The panel's user-management still queries
-> this service's `/customer/admin/customers` live until `tds-ext-customers` is published.
+> this service's `/customer/admin/customers` live until `tds-ext-customers-pkg` is published.
 > This service remains the live backend until backend cutover. See the root
 > `MIGRATION-STATUS.md`.
 
 ## Behind the gateway
 
 The public surface `api.tracht-digital.de/customer/*` is fronted by
-`tds-api-gateway`, a Slim reverse proxy that strips the `/customer` prefix and
+`tds-gateway-api`, a Slim reverse proxy that strips the `/customer` prefix and
 forwards to this service (so `…/customer/admin/projects` → this app's
 `/admin/projects`). The path contract is unchanged — routes here still mount
 at root. The build model is dev/release (see README): a push to `main` auto-assembles the **`dev`** bundle (developer artifact, not deployed); the manual **Release** workflow (`release.yml`) assembles the **`release`** bundle, pings the deploy webhook, and fires a `repository_dispatch(api-pushed)` to the gateway (needs `GATEWAY_DISPATCH_TOKEN`) so it reassembles its `dev` bundle.
@@ -210,7 +210,7 @@ Each customer-portal route is additionally gated by `RequirePermissionMiddleware
 checking the permission its account must hold — `projects:read`,
 `invoices:read`/`invoices:pay`, `documents:read`/`documents:write`/
 `documents:sign`, `messages:read`/`messages:write`, `tickets:read`/`tickets:write`
-(mirrors tds-shared's `PORTAL_PERMISSIONS`). The permission comes from the JWT `permissions` claim;
+(mirrors tds-shared-pkg's `PORTAL_PERMISSIONS`). The permission comes from the JWT `permissions` claim;
 admins bypass. Missing permission → 403. Permission changes take effect on the
 user's next login (auth-api revokes their sessions on change).
 - `/admin/time-entries/*` — CRUD plus `/timer`, `/timer/start`,
