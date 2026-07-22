@@ -73,9 +73,9 @@ ADMIN_TOKEN=<your 32+ char hex string, same across the three APIs>
 SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 # Stripe — test keys for dev, live keys for prod. These (plus the SMTP/IMAP/
-# Lexware settings) are now ALSO editable at runtime from the admin panel
+# Lexware settings) are now ALSO editable at runtime from the admin frontend
 # (Einrichtungsassistent / Einstellungen); a non-empty DB value overrides the
-# env var. Leave blank to configure entirely via the admin panel.
+# env var. Leave blank to configure entirely via the admin frontend.
 STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxx
 

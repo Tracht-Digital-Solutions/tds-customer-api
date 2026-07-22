@@ -4,11 +4,11 @@ PHP 8.3 + Slim 4 + PDO + Phinx + Stripe + JWKS verification. Owns
 the `tds_customer` MariaDB database and customer document storage
 on the production host's filesystem under `\$DOCUMENT_ROOT_DIR/{customer_id}/`.
 
-> Status: **PARTIALLY SUPERSEDED — still live, do NOT retire yet.** Ported to panel
+> Status: **PARTIALLY SUPERSEDED — still live, do NOT retire yet.** Ported to frontend
 > extensions: support tickets → `tds-ext-support-tickets-pkg`, time tracking →
 > `tds-ext-time-tracker-pkg`, Lexware → `tds-ext-lexware-pkg`, the customer directory →
 > `tds-ext-customers-pkg`, Stripe invoices → `tds-ext-billing-pkg`. **Not yet ported:**
-> projects/milestones, documents, messages. The panel's user-management still queries
+> projects/milestones, documents, messages. The frontend's user-management still queries
 > this service's `/customer/admin/customers` live until `tds-ext-customers-pkg` is published.
 > This service remains the live backend until backend cutover. See the root
 > `MIGRATION-STATUS.md`.
@@ -318,7 +318,7 @@ See INSTALL.md §6 for the throwaway-Docker test DB recipe.
   AFTER routing/error to be outermost. Added earlier, the routing
   middleware 405s every OPTIONS preflight (no OPTIONS routes exist) before
   CORS can short-circuit it, and browsers block every cross-origin
-  JSON/Authorization/X-Act-As-Customer request from both panels. Bit all
+  JSON/Authorization/X-Act-As-Customer request from both frontends. Bit all
   four API repos at once via copy-paste; `tests/PreflightTest.php` (an
   OPTIONS request through the REAL `Bootstrap::createApp()` app) is the
   regression guard.
