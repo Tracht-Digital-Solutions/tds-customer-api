@@ -327,3 +327,30 @@ See INSTALL.md §6 for the throwaway-Docker test DB recipe.
   that has no file on disk — the JWKS fetch from tds-auth-api breaks and
   every endpoint 401s. Apache (.htaccess) and the gateway's in-process
   mode don't need it.
+
+## Tests — AttachmentStorage
+
+`tests/Service/AttachmentStorageTest.php` (22 tests) covers where ticket
+attachment bytes land on disk. Two of the guards here are the only thing
+between an untrusted upload and the filesystem:
+
+- **the filename is sanitised** before it is used as a path segment. The bytes
+  arrive from a customer upload or, worse, from an IMAP message — a name of
+  `../../etc/passwd` must not escape the customer's own directory. Asserted
+  both structurally (no separator survives) and by resolving the written file
+  and checking it is still under the root.
+- **the mime allowlist and the size cap** decide what is stored at all. The
+  allowlist itself is asserted to carry no `text/html` or `image/svg+xml`,
+  since a stored attachment served back as an active page is the interesting
+  attack; the cap is pinned at its exact boundary, because an off-by-one there
+  rejects a legitimate 25 MB attachment.
+
+Layout invariants: files are per-customer (`{customer}/tickets/…`, which is
+what the download route authorises against) and carry a uuid, so two uploads
+of the same filename cannot overwrite each other.
+
+`storeBytes()` is the IMAP-ingest path and returns **null rather than
+throwing** — one bad MIME part must not fail a whole incoming email — so every
+rejection is asserted to be a null, not an exception.
+
+Verified by mutation: 17 deliberate breakages introduced, 17 caught.
