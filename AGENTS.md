@@ -54,6 +54,17 @@ at root. The build model is dev/release (see README): a push to `main` auto-asse
 - `ticket_setting(setting_key PK, setting_value, updated_at)` — ticket-system settings (notification toggles). The string PK column is declared `null => false` explicitly: MySQL 8 rejects a nullable PRIMARY KEY (error 1171) where MariaDB silently coerces it — same gotcha handled in tds-auth-api's `session.jti`.
 - `app_setting(setting_key PK, setting_value TEXT, updated_at)` — runtime store for the non-installation-relevant third-party config the admin edits in tds-admin (Stripe, ticket mailer, Lexware). Same generic shape as `ticket_setting` but `setting_value` is `TEXT` to hold base64 AES-256-GCM ciphertext. **No seed rows** — an absent key means "fall back to `.env`". See `AppSettings` below. Its migration is `20260705000001_create_customer_app_setting.php` / `CreateCustomerAppSetting` — **service-prefixed on purpose**: the gateway's in-process auto-migrate loads every service's migration files into one PHP process, so migration class names must be unique across all four APIs (three services shipping an identical `CreateAppSetting` was an uncatchable fatal that took the whole API down). Prefix every new migration's class with the service name.
 
+**That NOT NULL on a PK column is now enforced, not remembered (0.8.3).** The
+same omission shipped twice in tds-auth-api and only surfaced when the gateway's
+`/install.php` died mid-run on a fresh host — MariaDB, which dev/CI and every
+DB-backed test here use, coerces the column silently. Two guards:
+`tests/Support/MigrationDialectTest` scans `db/migrations` statically for a
+`primary_key` column lacking `'null' => false` (no DB needed), and `_pipeline.yml`
+runs a `mysql:8` service alongside MariaDB and applies the whole migration set to
+an empty MySQL 8 database on every run. `phinx.php` falls back to `getenv()` so
+that step works without a `.env` — PHP's `variables_order` (`GPCS`) leaves `$_ENV`
+unpopulated from the real environment; a real `.env` still wins.
+
 Foreign keys cascade-delete from customer; project FK on invoice/
 document/message/ticket uses `ON DELETE SET NULL` so deleting a project
 doesn't lose the financial/document/comm history. `time_entry` and the

@@ -7,6 +7,14 @@ name: Pipeline (reusable)
 #
 # The MariaDB service is always declared but only used when run_db_tests is
 # true (the DB-backed tests skip unless TDS_TEST_DB_DSN is set).
+#
+# A SECOND database service runs alongside it: MySQL 8, which is what the
+# production host actually is. The whole migration set is applied to it on
+# every run, because MariaDB accepts DDL that MySQL 8 rejects and the
+# difference only ever surfaced as /install.php dying halfway through on a
+# fresh host. Migrating a throwaway MySQL 8 database is the only check that
+# proves a fresh install will work; the static MigrationDialectTest names the
+# known traps, this one finds the rest.
 
 on:
   workflow_call:
@@ -56,6 +64,20 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+      # Production parity. Port 3307 on the host so it can coexist with the
+      # MariaDB service the DB-backed tests use.
+      mysql8:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: dev
+          MYSQL_DATABASE: ${{ inputs.db_name }}
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pdev"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
     steps:
       - uses: actions/checkout@v5
 
@@ -91,6 +113,20 @@ jobs:
 
       - name: PHPUnit
         run: composer test
+
+      - name: Migrate against MySQL 8 (production parity)
+        # The prod host is MySQL 8; dev and the tests above run MariaDB, which
+        # is more permissive. This applies every migration to an empty MySQL 8
+        # database, so a fresh /install.php is proven to work BEFORE the bundle
+        # is published rather than by an operator hitting error 1171 mid-run.
+        # phinx.php reads these through getenv() — there is no .env in CI.
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3307'
+          DB_NAME: ${{ inputs.db_name }}
+          DB_USER: root
+          DB_PASS: dev
+        run: vendor/bin/phinx migrate -e production
 
       - name: Assemble production bundle
         if: ${{ inputs.publish_branch != '' }}
