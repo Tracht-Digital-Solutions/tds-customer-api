@@ -270,6 +270,27 @@ Two endpoints let a customer modify their own data in place:
   `edited_at = NOW()` so the frontend can render a "(bearbeitet)"
   indicator. Same body length validation as create (1–10 000 chars).
 
+## Time zones: Europe/Berlin, pinned (0.8.4)
+
+`Bootstrap::createApp()` pins PHP to Europe/Berlin (`Infrastructure\TimeZone::pinPhp()`)
+and `Database::connect()` pins every DB session (`pinSession()`). Production already ran
+there on both sides — PHP's `date.timezone` and the MySQL session default — so every
+`NOW()` / `CURRENT_TIMESTAMP` column (`edited_at`, the timer's start and stop, every
+`created_at`) holds Berlin wall-clock time. CLI PHP and the CI database containers
+default to UTC, where the same comparison is two hours off.
+
+- **It pins a default and converts nothing.** A value written with `gmdate()` or
+  `UTC_TIMESTAMP()` stays UTC and needs a reader that names the zone. This service writes
+  none today; add one and it belongs here, with its reader.
+- **Never compare the two conventions in one condition.** `NOW()` against a UTC column is
+  off by the offset.
+- The official MySQL/MariaDB images ship empty time-zone tables, so the named `SET` can
+  fail. A session already at Berlin's offset (a host whose `SYSTEM` zone is Berlin) is
+  then left alone, because its DST rules read old TIMESTAMP values correctly; any other
+  session gets the current offset. Pinned in `tests/Infrastructure/TimeZoneTest`.
+- Moving to UTC means converting existing rows DST-correctly across every service's
+  tables. That is a separate decision (tds-ext-shop-pkg#2), not a refactor.
+
 ## Tests
 
 PHPUnit 10. `composer test` runs the suite.

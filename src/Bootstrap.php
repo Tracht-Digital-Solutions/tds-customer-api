@@ -63,6 +63,7 @@ use Tds\CustomerApi\Action\Admin\TimeEntry\TimerStartAction as AdminTimerStartAc
 use Tds\CustomerApi\Action\Admin\TimeEntry\TimerStopAction as AdminTimerStopAction;
 use Tds\CustomerApi\Action\Admin\TimeEntry\UpdateAction as AdminTimeEntryUpdateAction;
 use Tds\CustomerApi\Infrastructure\Database;
+use Tds\CustomerApi\Infrastructure\TimeZone;
 use Tds\CustomerApi\Middleware\AuditLogMiddleware;
 use Tds\CustomerApi\Middleware\CorsMiddleware;
 use Tds\CustomerApi\Middleware\JwksAuthMiddleware;
@@ -85,6 +86,9 @@ final class Bootstrap
 {
     public static function createApp(string $rootDir): App
     {
+        // PHP runs in production's zone, Europe/Berlin — see TimeZone.
+        TimeZone::pinPhp();
+
         if (file_exists($rootDir . '/.env')) {
             Dotenv::createImmutable($rootDir)->load();
         }

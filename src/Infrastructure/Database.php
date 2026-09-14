@@ -14,10 +14,14 @@ final class Database
             'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
             $cfg['host'], $cfg['port'], $cfg['name']
         );
-        return new PDO($dsn, $cfg['user'], $cfg['pass'], [
+        $pdo = new PDO($dsn, $cfg['user'], $cfg['pass'], [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
+        // Europe/Berlin, the zone production's NOW()/CURRENT_TIMESTAMP columns
+        // are written in — see TimeZone.
+        TimeZone::pinSession($pdo);
+        return $pdo;
     }
 }
