@@ -36,6 +36,9 @@ final class CreateAction extends BaseAction
         $projectId = isset($body['projectId']) && ctype_digit((string) $body['projectId'])
             ? (int) $body['projectId']
             : null;
+        if (!$this->projectOwnedBy($this->pdo, $projectId, $customerId)) {
+            return $this->json($response, 422, ['error' => 'Unknown project']);
+        }
 
         $stmt = $this->pdo->prepare(
             "INSERT INTO message (customer_id, project_id, author_type, body, created_at) "

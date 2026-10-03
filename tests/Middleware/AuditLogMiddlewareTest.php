@@ -85,7 +85,8 @@ final class AuditLogMiddlewareTest extends TestCase
     {
         $request = (new ServerRequestFactory())
             ->createServerRequest('POST', '/messages')
-            ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, ['admin' => true, 'admin_id' => 1]);
+            // `uid` is what auth-api issues; `admin_id` never existed.
+            ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, ['admin' => true, 'uid' => 1]);
 
         $this->dispatch($request, status: 201);
 
@@ -97,9 +98,11 @@ final class AuditLogMiddlewareTest extends TestCase
 
     public function test_x_forwarded_for_takes_precedence_over_remote_addr(): void
     {
+        // The LAST entry is the one the gateway appended; the first is
+        // whatever the client claimed and must not be what is recorded.
         $request = (new ServerRequestFactory())
             ->createServerRequest('GET', '/projects', ['REMOTE_ADDR' => '127.0.0.1'])
-            ->withHeader('X-Forwarded-For', '203.0.113.5, 10.0.0.1')
+            ->withHeader('X-Forwarded-For', '10.0.0.1, 203.0.113.5')
             ->withAttribute(JwksAuthMiddleware::ATTR_CLAIMS, ['admin' => false, 'customer_id' => 7]);
 
         $this->dispatch($request, status: 200);

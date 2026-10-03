@@ -21,6 +21,34 @@ final class ActiveCompany
 {
     public const HEADER = 'X-Act-As-Customer';
 
+    /** The renamed header the frontend API reads; accepted here too. */
+    public const COMPANY_HEADER = 'X-Act-As-Company';
+
+    /**
+     * The primary company from the token: `company_id`, else the deprecated
+     * `customer_id` alias auth-api emits for one release only. Reading only
+     * `customer_id` would have 401ed every portal user the day it was dropped.
+     *
+     * @param array<string,mixed> $claims
+     */
+    public static function primaryId(array $claims): ?int
+    {
+        foreach (['company_id', 'customer_id'] as $key) {
+            $value = $claims[$key] ?? null;
+            if (is_int($value) && $value > 0) {
+                return $value;
+            }
+        }
+        return null;
+    }
+
+    /** The act-as header of a request, under either name (new name first). */
+    public static function headerOf(\Psr\Http\Message\ServerRequestInterface $request): string
+    {
+        $value = trim($request->getHeaderLine(self::COMPANY_HEADER));
+        return $value !== '' ? $value : trim($request->getHeaderLine(self::HEADER));
+    }
+
     /**
      * The company ids a non-admin login may act as. Derived from the `companies`
      * claim, falling back to the single `customer_id` claim.
@@ -35,8 +63,8 @@ final class ActiveCompany
             $ids[] = $c['id'];
         }
         if ($ids === []) {
-            $cid = $claims['customer_id'] ?? null;
-            if (is_int($cid) && $cid > 0) {
+            $cid = self::primaryId($claims);
+            if ($cid !== null) {
                 $ids[] = $cid;
             }
         }
@@ -60,11 +88,7 @@ final class ActiveCompany
                 return $id;
             }
         }
-        $cid = $claims['customer_id'] ?? null;
-        if (is_int($cid) && $cid > 0) {
-            return $cid;
-        }
-        return $allowed[0] ?? null;
+        return self::primaryId($claims) ?? $allowed[0] ?? null;
     }
 
     /**

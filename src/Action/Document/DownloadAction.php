@@ -9,6 +9,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Factory\StreamFactory;
 use Slim\Psr7\Response;
 use Tds\CustomerApi\Action\BaseAction;
+use Tds\CustomerApi\Support\Env;
 
 /**
  * GET /documents/{id}/download
@@ -42,7 +43,7 @@ final class DownloadAction extends BaseAction
             return $this->json($response, 404, ['error' => 'Not found']);
         }
 
-        $rootDir = (string) (getenv('DOCUMENT_ROOT_DIR') ?: '');
+        $rootDir = Env::get('DOCUMENT_ROOT_DIR', '');
         $absPath = $rootDir . DIRECTORY_SEPARATOR . $doc['storage_path'];
         if (!is_readable($absPath)) {
             return $this->json($response, 410, ['error' => 'File no longer present on disk']);

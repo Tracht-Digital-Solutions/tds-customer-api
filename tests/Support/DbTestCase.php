@@ -37,6 +37,10 @@ abstract class DbTestCase extends TestCase
             [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                // As production (Infrastructure\Database). With emulated
+                // prepares the tests accepted a repeated named placeholder
+                // that every real request rejected.
+                PDO::ATTR_EMULATE_PREPARES => false,
             ],
         );
     }

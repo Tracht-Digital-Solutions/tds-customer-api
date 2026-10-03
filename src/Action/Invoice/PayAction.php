@@ -49,26 +49,38 @@ final class PayAction extends BaseAction
             return $this->json($response, 409, ['error' => 'Invoice not payable in current status']);
         }
 
-        Stripe::setApiKey($this->settings->get('STRIPE_SECRET_KEY'));
+        $secretKey = $this->settings->get('STRIPE_SECRET_KEY');
+        if ($secretKey === '') {
+            return $this->json($response, 503, ['error' => 'Online payment is not configured']);
+        }
+        Stripe::setApiKey($secretKey);
         $returnUrl = $this->settings->get('STRIPE_RETURN_URL');
 
-        $session = StripeSession::create([
-            'mode' => 'payment',
-            'line_items' => [[
-                'quantity' => 1,
-                'price_data' => [
-                    'currency' => strtolower((string) $invoice['currency']),
-                    'unit_amount' => (int) $invoice['amount_cents'],
-                    'product_data' => ['name' => "Invoice #{$invoice['id']}"],
+        // A Stripe failure is the PROVIDER's (502), not ours (500 with
+        // details), and the idempotency key keeps a double click from opening
+        // two sessions for one invoice.
+        try {
+            $session = StripeSession::create([
+                'mode' => 'payment',
+                'line_items' => [[
+                    'quantity' => 1,
+                    'price_data' => [
+                        'currency' => strtolower((string) $invoice['currency']),
+                        'unit_amount' => (int) $invoice['amount_cents'],
+                        'product_data' => ['name' => "Invoice #{$invoice['id']}"],
+                    ],
+                ]],
+                'success_url' => $returnUrl . '?paid=' . $invoiceId,
+                'cancel_url' => $returnUrl . '?canceled=' . $invoiceId,
+                'metadata' => [
+                    'invoice_id' => (string) $invoiceId,
+                    'customer_id' => (string) $customerId,
                 ],
-            ]],
-            'success_url' => $returnUrl . '?paid=' . $invoiceId,
-            'cancel_url' => $returnUrl . '?canceled=' . $invoiceId,
-            'metadata' => [
-                'invoice_id' => (string) $invoiceId,
-                'customer_id' => (string) $customerId,
-            ],
-        ]);
+            ], ['idempotency_key' => 'invoice-' . $invoiceId . '-' . (int) ($invoice['amount_cents'] ?? 0) . '-' . intdiv(time(), 600)]);
+        } catch (\Throwable $e) {
+            error_log('[tds-customer-api] Stripe checkout failed: ' . $e->getMessage());
+            return $this->json($response, 502, ['error' => 'Payment provider unavailable, please try again later']);
+        }
 
         return $this->json($response, 200, ['url' => $session->url]);
     }

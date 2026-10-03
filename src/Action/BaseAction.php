@@ -43,18 +43,18 @@ abstract class BaseAction
         }
 
         if ((bool) ($claims['admin'] ?? false) === true) {
-            $header = trim($request->getHeaderLine(self::ACTING_CUSTOMER_HEADER));
+            $header = ActiveCompany::headerOf($request);
             if ($header !== '' && ctype_digit($header) && (int) $header > 0) {
                 return (int) $header;
             }
-            $own = $claims['customer_id'] ?? null;
-            if (is_int($own) && $own > 0) {
+            $own = ActiveCompany::primaryId($claims);
+            if ($own !== null) {
                 return $own;
             }
             throw new HttpBadRequestException($request, 'No customer selected for admin view');
         }
 
-        $active = ActiveCompany::resolve($claims, $request->getHeaderLine(self::ACTING_CUSTOMER_HEADER));
+        $active = ActiveCompany::resolve($claims, ActiveCompany::headerOf($request));
         if ($active === null) {
             throw new \LogicException('JWT claims carry no company — check that this action is behind JwksAuthMiddleware');
         }
@@ -62,6 +62,23 @@ abstract class BaseAction
     }
 
     /** @param array<string,mixed> $payload */
+    /**
+     * Whether `$projectId` (null = no project) belongs to the request's company.
+     *
+     * A client-supplied project id was written as-is: another company's id
+     * linked the new row to a foreign project, and an unknown one hit the
+     * foreign key as a 500.
+     */
+    protected function projectOwnedBy(\PDO $pdo, ?int $projectId, int $customerId): bool
+    {
+        if ($projectId === null) {
+            return true;
+        }
+        $stmt = $pdo->prepare('SELECT 1 FROM project WHERE id = :pid AND customer_id = :cid LIMIT 1');
+        $stmt->execute(['pid' => $projectId, 'cid' => $customerId]);
+        return $stmt->fetchColumn() !== false;
+    }
+
     protected function json(ResponseInterface $response, int $status, array $payload): ResponseInterface
     {
         $response->getBody()->write(json_encode($payload));

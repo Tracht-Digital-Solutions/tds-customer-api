@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Tds\CustomerApi\Service;
 
 use Psr\Http\Message\UploadedFileInterface;
+use Tds\CustomerApi\Support\Env;
 
 /**
  * Persists ticket attachment bytes on disk, mirroring the Document storage model
@@ -25,7 +26,7 @@ final class AttachmentStorage
 
     public function rootDir(): string
     {
-        return (string) (getenv('DOCUMENT_ROOT_DIR') ?: '');
+        return Env::get('DOCUMENT_ROOT_DIR', '');
     }
 
     public function available(): bool

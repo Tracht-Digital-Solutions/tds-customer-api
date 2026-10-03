@@ -33,7 +33,7 @@ final class RequirePermissionMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        $activeCompany = ActiveCompany::resolve($claims, $request->getHeaderLine(ActiveCompany::HEADER));
+        $activeCompany = ActiveCompany::resolve($claims, ActiveCompany::headerOf($request));
         $permissions = ActiveCompany::permissionsFor($claims, $activeCompany);
 
         if (!in_array($this->permission, $permissions, true)) {

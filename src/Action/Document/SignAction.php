@@ -75,6 +75,12 @@ final class SignAction extends BaseAction
         $host = $uri->getHost();
         $port = $uri->getPort();
         $authority = $host . ($port !== null && !in_array($port, [80, 443], true) ? ':' . $port : '');
-        return $scheme . '://' . $authority;
+        // The gateway strips its `/customer` prefix before dispatching and
+        // says so in X-Forwarded-Prefix. Without it the signed link pointed
+        // at `/documents/sign`, which the gateway routes to the frontend
+        // catch-all — every signed download link was dead.
+        $prefix = trim($request->getHeaderLine('X-Forwarded-Prefix'));
+        $prefix = preg_match('#^/[A-Za-z0-9_-]+$#', $prefix) === 1 ? $prefix : '';
+        return $scheme . '://' . $authority . $prefix;
     }
 }

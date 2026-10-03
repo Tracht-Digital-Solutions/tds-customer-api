@@ -9,6 +9,7 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\Psr7\Response;
 use Tds\CustomerApi\Service\TokenVerifier;
+use Tds\CustomerApi\Support\ActiveCompany;
 
 /**
  * Verifies the Authorization Bearer JWT against the JWKS served by
@@ -40,18 +41,21 @@ final class JwksAuthMiddleware implements MiddlewareInterface
         try {
             $claims = $this->jwks->verify($token);
         } catch (\Throwable $e) {
-            return $this->unauthorized('Invalid token: ' . $e->getMessage());
+            // The reason stays in the log: it included Guzzle errors and the
+            // internal JWKS URL, sent to anyone who presented a bad token.
+            error_log('[tds-customer-api] token rejected: ' . $e->getMessage());
+            return $this->unauthorized('Invalid token');
         }
 
         $isAdmin = (bool) ($claims['admin'] ?? false);
-        $customerId = $claims['customer_id'] ?? null;
+        $customerId = ActiveCompany::primaryId($claims) ?? (ActiveCompany::allowedIds($claims)[0] ?? null);
 
         if ($this->requireAdmin) {
             if (!$isAdmin) {
                 return $this->forbidden('Admin access required');
             }
         } elseif (!$isAdmin && (!is_int($customerId) || $customerId <= 0)) {
-            return $this->unauthorized('Token has no customer_id');
+            return $this->unauthorized('Token has no company');
         }
 
         $request = $request->withAttribute(self::ATTR_CLAIMS, $claims);

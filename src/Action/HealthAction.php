@@ -7,6 +7,7 @@ use PDO;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Response;
+use Tds\CustomerApi\Support\Env;
 
 /**
  * GET /healthz
@@ -42,7 +43,7 @@ final class HealthAction extends BaseAction
             'db' => $this->checkDb(),
             'stripe' => $this->checkStripe(),
             'blob' => $this->checkBlobStorage(),
-            'commit' => trim((string) (getenv('GIT_COMMIT') ?: 'unknown')),
+            'commit' => trim(Env::get('GIT_COMMIT', 'unknown')),
         ])->withHeader('Cache-Control', 'no-store');
     }
 
@@ -85,14 +86,14 @@ final class HealthAction extends BaseAction
         try {
             $key = ($this->settings)()->get('STRIPE_SECRET_KEY');
         } catch (\Throwable) {
-            $key = (string) (getenv('STRIPE_SECRET_KEY') ?: '');
+            $key = Env::get('STRIPE_SECRET_KEY', '');
         }
         return $key === '' ? 'missing' : 'configured';
     }
 
     private function checkBlobStorage(): string
     {
-        $dir = (string) (getenv('DOCUMENT_ROOT_DIR') ?: '');
+        $dir = Env::get('DOCUMENT_ROOT_DIR', '');
         if ($dir === '') return 'unconfigured';
         if (!is_dir($dir)) return 'missing';
         return is_writable($dir) ? 'writable' : 'unwritable';

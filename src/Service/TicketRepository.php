@@ -72,8 +72,14 @@ final class TicketRepository
             $params['customer_id'] = $filters['customer_id'];
         }
         if (isset($filters['q']) && $filters['q'] !== '') {
-            $where[] = '(t.subject LIKE :q OR t.description LIKE :q)';
-            $params['q'] = '%' . $filters['q'] . '%';
+            // Two placeholders, not `:q` twice: the connection uses NATIVE
+            // prepares (ATTR_EMULATE_PREPARES=false), which reject a repeated
+            // name — every admin search with `q` was a 500. `%`/`_` in the
+            // term are matched literally.
+            $where[] = "(t.subject LIKE :q_subject ESCAPE '!' OR t.description LIKE :q_description ESCAPE '!')";
+            $like = '%' . strtr((string) $filters['q'], ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+            $params['q_subject'] = $like;
+            $params['q_description'] = $like;
         }
 
         // LEFT JOIN (not INNER): contact-form tickets have customer_id = NULL, so

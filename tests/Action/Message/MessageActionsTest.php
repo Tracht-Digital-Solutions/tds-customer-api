@@ -22,6 +22,11 @@ final class MessageActionsTest extends DbTestCase
     {
         parent::setUp();
         $this->createMessageTable();
+        // A message may only name a project of its own company, so the
+        // lookup needs the table: project 5 belongs to company 7.
+        $this->pdo->exec('DROP TABLE IF EXISTS project');
+        $this->pdo->exec('CREATE TABLE project (id INT UNSIGNED NOT NULL PRIMARY KEY, customer_id INT UNSIGNED NOT NULL)');
+        $this->pdo->exec('INSERT INTO project (id, customer_id) VALUES (5, 7), (6, 8)');
     }
 
     private function seed(): void
@@ -46,6 +51,15 @@ final class MessageActionsTest extends DbTestCase
         $row = $this->pdo->query("SELECT author_type, body FROM message WHERE id = {$id}")->fetch();
         self::assertSame('customer', $row['author_type']);
         self::assertSame('Hello there', $row['body']);
+    }
+
+    public function test_create_refuses_another_companys_project(): void
+    {
+        $req = $this->request('POST', '/messages', 7, body: ['body' => 'Hi', 'projectId' => '6']);
+        $res = (new CreateAction($this->pdo))($req, new Response());
+
+        self::assertSame(422, $res->getStatusCode());
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM message WHERE project_id = 6')->fetchColumn());
     }
 
     public function test_create_by_admin_is_authored_as_owner(): void

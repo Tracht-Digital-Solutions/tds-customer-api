@@ -9,6 +9,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Factory\StreamFactory;
 use Slim\Psr7\Response;
 use Tds\CustomerApi\Service\DocumentSigner;
+use Tds\CustomerApi\Support\Env;
 
 /**
  * GET /documents/sign?d=&c=&exp=&sig=
@@ -56,7 +57,7 @@ final class SignedDownloadAction
             return $this->error($response, 404, 'Not found');
         }
 
-        $rootDir = (string) (getenv('DOCUMENT_ROOT_DIR') ?: '');
+        $rootDir = Env::get('DOCUMENT_ROOT_DIR', '');
         $absPath = $rootDir . DIRECTORY_SEPARATOR . $doc['storage_path'];
         if (!is_readable($absPath)) {
             return $this->error($response, 410, 'File no longer present on disk');

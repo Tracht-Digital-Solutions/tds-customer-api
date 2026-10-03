@@ -41,7 +41,8 @@ final class CorsMiddleware implements MiddlewareInterface
             // X-Act-As-Customer lets an admin scope a portal request to a chosen
             // customer (Admin-Ansicht); it must be allowlisted for the browser
             // preflight to send it cross-origin (app. → api.).
-            ->withHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Act-As-Customer')
+            // X-Act-As-Company is the renamed header (the frontend API's).
+            ->withHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Act-As-Company, X-Act-As-Customer')
             ->withHeader('Access-Control-Max-Age', '600');
     }
 }

@@ -47,7 +47,14 @@ final class WebhookAction extends BaseAction
             return $this->json($response, 400, ['error' => 'Invalid signature']);
         }
 
-        if ($event->type === 'checkout.session.completed') {
+        // `completed` is not `paid`: a delayed method (SEPA, bank transfer)
+        // completes the session with payment_status `unpaid` and confirms
+        // later with `checkout.session.async_payment_succeeded`.
+        $paidEvent = $event->type === 'checkout.session.async_payment_succeeded'
+            || ($event->type === 'checkout.session.completed'
+                && (($event->data->object->payment_status ?? null) === 'paid'));
+
+        if ($paidEvent) {
             $session = $event->data->object;
             $invoiceId = (int) ($session->metadata['invoice_id'] ?? 0);
 

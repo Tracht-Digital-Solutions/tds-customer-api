@@ -8,6 +8,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Tds\CustomerApi\Support\ActiveCompany;
 
 /**
  * Records one row per authenticated request in `audit_log` for
@@ -66,12 +67,13 @@ final class AuditLogMiddleware implements MiddlewareInterface
     /** @param array<string,mixed> $claims @return array{0:string,1:?int} */
     private function actor(array $claims): array
     {
+        // `uid` is the person. auth-api never issued `admin_id`, so every
+        // admin row was written with a NULL actor.
+        $uid = $claims['uid'] ?? null;
         if (($claims['admin'] ?? false) === true) {
-            $id = $claims['admin_id'] ?? null;
-            return ['admin', is_int($id) ? $id : null];
+            return ['admin', is_int($uid) ? $uid : null];
         }
-        $id = $claims['customer_id'] ?? null;
-        return ['customer', is_int($id) ? $id : null];
+        return ['customer', is_int($uid) ? $uid : ActiveCompany::primaryId($claims)];
     }
 
     /**
@@ -99,9 +101,11 @@ final class AuditLogMiddleware implements MiddlewareInterface
     {
         $forwarded = $request->getHeaderLine('X-Forwarded-For');
         if ($forwarded !== '') {
-            // First entry is the original client; subsequent are proxies.
-            $first = trim(explode(',', $forwarded)[0]);
-            if ($first !== '') return $first;
+            // The LAST entry is the one the gateway appended; the first is
+            // whatever the client claimed.
+            $parts = array_map('trim', explode(',', $forwarded));
+            $last = (string) end($parts);
+            if (filter_var($last, FILTER_VALIDATE_IP) !== false) return $last;
         }
         $server = $request->getServerParams();
         return isset($server['REMOTE_ADDR']) ? (string) $server['REMOTE_ADDR'] : null;

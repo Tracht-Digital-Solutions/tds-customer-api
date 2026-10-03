@@ -9,6 +9,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Slim\Psr7\Response;
 use Tds\CustomerApi\Action\BaseAction;
+use Tds\CustomerApi\Support\Env;
 
 /**
  * POST /documents — multipart upload.
@@ -49,7 +50,7 @@ final class UploadAction extends BaseAction
             return $this->json($response, 415, ['error' => 'Mime type not allowed', 'mime' => $mime]);
         }
 
-        $rootDir = (string) (getenv('DOCUMENT_ROOT_DIR') ?: '');
+        $rootDir = Env::get('DOCUMENT_ROOT_DIR', '');
         if ($rootDir === '' || !is_dir($rootDir) || !is_writable($rootDir)) {
             return $this->json($response, 503, ['error' => 'Document storage unavailable']);
         }
@@ -64,12 +65,15 @@ final class UploadAction extends BaseAction
         $relPath = $customerId . '/' . $uuid . '-' . $safeName;
         $absPath = $rootDir . DIRECTORY_SEPARATOR . $relPath;
 
-        $file->moveTo($absPath);
-
         $body = $request->getParsedBody();
         $projectId = is_array($body) && isset($body['projectId']) && ctype_digit((string) $body['projectId'])
             ? (int) $body['projectId']
             : null;
+        if (!$this->projectOwnedBy($this->pdo, $projectId, $customerId)) {
+            return $this->json($response, 422, ['error' => 'Unknown project']);
+        }
+
+        $file->moveTo($absPath);
 
         $stmt = $this->pdo->prepare(
             "INSERT INTO document (customer_id, project_id, filename, storage_path, mime_type, size_bytes, uploaded_at) "

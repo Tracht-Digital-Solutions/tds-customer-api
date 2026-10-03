@@ -30,13 +30,13 @@ final class AttachmentStorageTest extends TestCase
     {
         $this->root = sys_get_temp_dir() . '/tds-attach-' . bin2hex(random_bytes(6));
         mkdir($this->root, 0700, true);
-        putenv('DOCUMENT_ROOT_DIR=' . $this->root);
+        self::setRoot($this->root);
         $this->storage = new AttachmentStorage();
     }
 
     protected function tearDown(): void
     {
-        putenv('DOCUMENT_ROOT_DIR');
+        self::setRoot(null);
         $this->rmrf($this->root);
     }
 
@@ -63,14 +63,14 @@ final class AttachmentStorageTest extends TestCase
     public function test_is_UNAVAILABLE_when_no_root_is_configured(): void
     {
         // Uploads must 503 rather than write into the process working dir.
-        putenv('DOCUMENT_ROOT_DIR=');
+        self::setRoot('');
         self::assertFalse($this->storage->available());
         self::assertSame('', $this->storage->rootDir());
     }
 
     public function test_is_unavailable_when_the_root_does_not_exist(): void
     {
-        putenv('DOCUMENT_ROOT_DIR=' . $this->root . '/nope');
+        self::setRoot($this->root . '/nope');
         self::assertFalse($this->storage->available());
     }
 
@@ -142,7 +142,7 @@ final class AttachmentStorageTest extends TestCase
     public function test_returns_null_rather_than_throwing_when_unavailable(): void
     {
         // The IMAP ingester skips a part; it must not fail the whole message.
-        putenv('DOCUMENT_ROOT_DIR=');
+        self::setRoot('');
         self::assertNull($this->storage->storeBytes(7, 'a.pdf', 'bytes', 'application/pdf'));
     }
 
@@ -240,5 +240,22 @@ final class AttachmentStorageTest extends TestCase
             $this->root . DIRECTORY_SEPARATOR . '7/tickets/abc-a.pdf',
             $this->storage->absolutePath('7/tickets/abc-a.pdf'),
         );
+    }
+
+    /**
+     * Set (or clear, with null) the storage root the way production sees it:
+     * `$_ENV` first — where phpdotenv puts `.env` values — then the process
+     * environment. A test earlier in the run may have loaded the repo's own
+     * `.env` into `$_ENV`, so `putenv()` alone no longer decides.
+     */
+    private static function setRoot(?string $value): void
+    {
+        if ($value === null) {
+            unset($_ENV['DOCUMENT_ROOT_DIR'], $_SERVER['DOCUMENT_ROOT_DIR']);
+            putenv('DOCUMENT_ROOT_DIR');
+            return;
+        }
+        $_ENV['DOCUMENT_ROOT_DIR'] = $value;
+        putenv('DOCUMENT_ROOT_DIR=' . $value);
     }
 }

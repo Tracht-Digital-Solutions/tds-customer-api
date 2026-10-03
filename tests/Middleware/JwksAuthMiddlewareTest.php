@@ -29,9 +29,11 @@ final class JwksAuthMiddlewareTest extends TestCase
         self::assertSame('No token presented', $this->jsonBody($response)['detail']);
     }
 
-    public function test_invalid_token_returns_401_with_reason(): void
+    public function test_invalid_token_returns_401_without_internals(): void
     {
-        $this->verifier->throwOnVerify = new \RuntimeException('expired');
+        // The verifier's message (Guzzle errors, the internal JWKS URL) goes
+        // to the log, not to whoever presented the token.
+        $this->verifier->throwOnVerify = new \RuntimeException('expired at http://internal/jwks');
 
         $request = (new ServerRequestFactory())
             ->createServerRequest('GET', '/projects')
@@ -40,7 +42,7 @@ final class JwksAuthMiddlewareTest extends TestCase
         $response = $this->dispatch($request);
 
         self::assertSame(401, $response->getStatusCode());
-        self::assertStringContainsString('expired', $this->jsonBody($response)['detail']);
+        self::assertSame('Invalid token', $this->jsonBody($response)['detail']);
     }
 
     public function test_customer_token_without_customer_id_returns_401(): void
@@ -53,7 +55,19 @@ final class JwksAuthMiddlewareTest extends TestCase
         $response = $this->dispatch($request);
 
         self::assertSame(401, $response->getStatusCode());
-        self::assertSame('Token has no customer_id', $this->jsonBody($response)['detail']);
+        self::assertSame('Token has no company', $this->jsonBody($response)['detail']);
+    }
+
+    public function test_company_id_claim_is_accepted_without_the_deprecated_alias(): void
+    {
+        // auth-api drops `customer_id` after one release; `company_id` alone
+        // must keep the portal working.
+        $this->verifier->claims = ['admin' => false, 'company_id' => 7];
+        $request = (new ServerRequestFactory())
+            ->createServerRequest('GET', '/projects')
+            ->withHeader('Authorization', 'Bearer token');
+
+        self::assertSame(200, $this->dispatch($request)->getStatusCode());
     }
 
     public function test_customer_token_with_customer_id_attaches_claims_and_proceeds(): void
