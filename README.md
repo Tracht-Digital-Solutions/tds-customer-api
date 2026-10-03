@@ -2,7 +2,7 @@
 
 > **Setting this up from scratch?** See [`INSTALL.md`](INSTALL.md) for
 > the step-by-step bring-up (composer → MariaDB → Stripe → env →
-> 8 migrations → smoke test). This README documents endpoints,
+> migrations → smoke test). This README documents endpoints,
 > configuration and operational notes.
 
 ---
@@ -26,7 +26,7 @@ All require a customer JWT (`admin=false, customer_id=N`) issued by
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/healthz` | Liveness probe — `db` (`ok`/`no-schema`/`down`) + Stripe/blob storage state. Always HTTP 200; the gateway aggregate reads `db`. |
-| `POST` | `/admin/customers` | **Admin onboarding** (Bearer `ADMIN_TOKEN`): insert customer + ask tds-auth-api to store credential; returns `{customer, tempPassword}` once |
+| `POST` | `/admin/customers` | **Admin onboarding** (admin JWT via JWKS): insert customer + ask tds-auth-api to store credential; returns `{customer, tempPassword}` once |
 | `GET` | `/admin/projects` | **Admin**: flat list of all projects with customer + milestones (used by the admin time-tracking picker) |
 | `GET` | `/admin/time-entries` | **Admin**: list time entries with filters (`projectId`, `customerId`, `from`, `to`, `includeRunning`) |
 | `POST` | `/admin/time-entries` | **Admin**: manual entry — accepts either `ended_at` or `duration_minutes`, fills the other |
@@ -76,10 +76,11 @@ docker run --rm -d --name tds-customer-maria \
 
 ## Deploy
 
-Deployment is automatic. On a push to `main`, once CI passes, the
-`deploy` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-POST-pings the deploy webhook and the production host pulls the new
-release and activates it.
+Production is the manual **Release** workflow
+([`.github/workflows/release.yml`](.github/workflows/release.yml)): it runs
+the DB-backed test gate, publishes the bundle to the `release` branch, pings
+the deploy webhook and asks the gateway to reassemble. `ci.yml` checks pull
+requests only.
 
 **Migrations on production apply automatically.** This service is served
 in-process by the `tds-gateway-api` bundle, which runs each service's pending

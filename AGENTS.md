@@ -37,7 +37,7 @@ at root. The build model is dev/release (see README): a push to `main` auto-asse
   the `storage_path` relative to `\$DOCUMENT_ROOT_DIR`.
 - All actions extend `BaseAction` for the json + customerId helpers.
 
-## Schema (14 migrations)
+## Schema (`db/migrations/`)
 
 - `customer(id, email UNIQUE, name, created_at, updated_at)`
 - `project(id, customer_id FK, title, status, start/target dates, description)`

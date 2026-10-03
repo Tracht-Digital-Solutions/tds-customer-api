@@ -152,7 +152,7 @@ stripe listen --forward-to localhost:8004/stripe/webhook
 
 Pure unit tests cover `DocumentSigner` (HMAC round-trip + tamper +
 expiry), `BaseAction` (`customerId` claim extraction), both auth
-middlewares (`AdminAuthMiddleware`, `JwksAuthMiddleware` — via a
+middlewares (`JwksAuthMiddleware` — admin JWTs too — via a
 `TokenVerifier` stub so we don't spin a JWKS server). They run
 without any external dependencies:
 

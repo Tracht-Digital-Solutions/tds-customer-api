@@ -92,7 +92,10 @@ final class CreateAction extends BaseAction
     {
         if (!is_string($v) || $v === '') return null;
         try {
-            return new \DateTimeImmutable($v);
+            // Into the server's zone (Europe/Berlin, like the DB session): a
+            // client `…Z` value was stored as UTC wall-clock time and then
+            // compared with Berlin NOW() — an hour or two off.
+            return (new \DateTimeImmutable($v))->setTimezone(new \DateTimeZone(date_default_timezone_get()));
         } catch (\Throwable) {
             return null;
         }
