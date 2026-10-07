@@ -114,6 +114,30 @@ jobs:
       - name: PHPUnit
         run: composer test
 
+      # tds-gateway-api#7. Production dependencies only (--no-dev): a high or
+      # critical advisory fails the run, anything lower is a warning annotation,
+      # and an audit that cannot run (Packagist down) only warns. Same policy as
+      # the gateway's scripts/composer-audit.php, which also audits the shipped
+      # tree in the assemble — inline here because reusable workflows are
+      # blocked org-wide.
+      - name: Composer audit (fails on high/critical)
+        run: |
+          composer audit --no-dev --format=json --abandoned=report --no-interaction > "$RUNNER_TEMP/audit.json" 2>/dev/null || true
+          php -r '
+            $j = json_decode((string) @file_get_contents($argv[1]), true);
+            if (!is_array($j)) { echo "::warning title=composer audit::audit output unreadable — not checked this run\n"; exit(0); }
+            $block = 0;
+            foreach ((array) ($j["advisories"] ?? []) as $pkg => $list) {
+              foreach ((array) $list as $a) {
+                $sev = strtolower(trim((string) ($a["severity"] ?? ""))) ?: "unknown";
+                $hit = in_array($sev, ["high", "critical"], true);
+                $block += $hit ? 1 : 0;
+                printf("::%s title=composer audit::%s — %s [%s, %s]\n", $hit ? "error" : "warning", $pkg, $a["title"] ?? "", $a["cve"] ?? $a["advisoryId"] ?? "", $sev);
+              }
+            }
+            exit($block > 0 ? 1 : 0);
+          ' "$RUNNER_TEMP/audit.json"
+
       - name: Migrate against MySQL 8 (production parity)
         # The prod host is MySQL 8; dev and the tests above run MariaDB, which
         # is more permissive. This applies every migration to an empty MySQL 8
