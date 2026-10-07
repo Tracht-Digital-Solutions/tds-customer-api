@@ -85,8 +85,8 @@ requests only.
 **Migrations on production apply automatically.** This service is served
 in-process by the `tds-gateway-api` bundle, which runs each service's pending
 Phinx migrations on the first request after a deploy — in-process via Phinx's
-`Manager` API, no `proc_open`, no CLI php (see the gateway's `AGENTS.md` →
-*Auto-migration*). So new migrations (e.g. `create_time_entry`,
+`Manager` API, no `proc_open`, no CLI php (see
+`tds-gateway-api/docs/agents/migrations.md`). So new migrations (e.g. `create_time_entry`,
 `add_message_edited_at`) apply themselves on the next deploy — no manual
 `composer migrate:prod`. `/healthz` reports the schema state in its `db` field
 (`ok` / `no-schema` / `down`); a reachable-but-un-migrated DB shows `no-schema`
