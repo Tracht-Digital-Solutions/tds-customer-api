@@ -1,0 +1,10 @@
+# LF for everything that ends up on the production host (Linux)
+*.php       text eol=lf
+*.html      text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.sh        text eol=lf
+.htaccess   text eol=lf
+*.htaccess  text eol=lf

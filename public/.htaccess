@@ -1,0 +1,29 @@
+# Slim 4 front controller routing.
+# All requests funnel through public/index.php; the Slim router takes
+# over from there.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # If the request maps to an actual file or directory, serve it
+    # directly. Otherwise, hand the request off to index.php.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    # Fallback for hosts without mod_rewrite — set the front controller
+    # via DirectoryIndex.
+    DirectoryIndex index.php
+</IfModule>
+
+# Don't list the directory contents
+Options -Indexes
+
+# Hide hidden files (.env etc.) just in case they end up here
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
